@@ -1,0 +1,51 @@
+rules_version = '2';
+
+// SAT practice — name-based duo (no Auth, no passwords, no room codes).
+// Trust model: only two people know this project's URL/config, so the rules
+// stay simple and permissive. Do NOT use these rules for a public app.
+//
+// Collections (see net.js):
+//   status/{name}                      presence: { currentQuestionId, currentIndex, lastSeen, todayCount, dayKey }
+//   attempts/{autoId}                  append-only ledger (never updated/deleted)
+//   sessions/{id}                      live 1v1 challenges (with embedded currentAnswers)
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    // Presence docs are keyed by typed name. Either player may read/write
+    // both (needed to discover friend's presence and daily counter).
+    match /status/{name} {
+      allow read, write: if true;
+    }
+
+    // Per-user progress summary { solved: {qid: letter}, updatedAt }.
+    // 1-doc read replaces full attempts scans on boot + challenge pick.
+    // Either player may read both (fresh-pick filter needs the friend's);
+    // each client only writes its own (same trust model as status).
+    match /progress/{name} {
+      allow read, write: if true;
+    }
+
+    // Attempts: anyone can read (both players' history page) and create.
+    // Delete is allowed so "Reset all progress" can wipe a profile.
+    // No update keeps the ledger append-only. Basic shape check on create
+    // keeps junk writes out.
+    match /attempts/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(
+          ['user_name', 'question_id', 'selected', 'is_correct', 'answered_at'])
+        && request.resource.data.user_name is string
+        && request.resource.data.question_id is string
+        && request.resource.data.selected in ['A', 'B', 'C', 'D']
+        && request.resource.data.is_correct is bool;
+      allow update: if false;
+      allow delete: if true;
+    }
+
+    // Sessions: live 1v1 challenges with embedded currentAnswers.
+    // Either player can create, follow, answer, and advance.
+    match /sessions/{id} {
+      allow read, create, update: if true;
+      allow delete: if false;
+    }
+  }
+}
