@@ -176,7 +176,6 @@ Net.init = async function (db) {
   Net.db.forEach(e => { if (e && e.id) Net.byId[e.id] = e; });
   wireChallengeUI();
   injectPinBox();
-  injectFriendRow();
   if (!Net._leaveWired) {
     Net._leaveWired = true;
     window.addEventListener("pagehide", () => {
@@ -718,37 +717,6 @@ function wireChallengeUI() {
   if (ia) ia.onclick = () => acceptChallenge().catch(() => {});
   if (idc) idc.onclick = () => declineChallenge().catch(() => {});
 }
-function injectFriendRow() {
-  if ($("friendrow") || !$("ov-challenge")) return;
-  const modal = document.querySelector("#ov-challenge .modal");
-  if (!modal) return;
-  const div = document.createElement("div");
-  div.id = "friendrow";
-  div.innerHTML = '<div class="fsec">Add friend</div>' +
-    '<div class="duo-join"><input id="friendinput" maxlength="20" placeholder="Friend\'s name…" autocomplete="off">' +
-    '<button class="btn-ghost" id="friendadd" type="button">Add</button></div>' +
-    '<div id="friendmsg" class="duo-msg" style="display:none"></div>';
-  const msg = $("chall-msg");
-  modal.insertBefore(div, msg || $("challclose").parentNode);
-  $("friendadd").onclick = async () => {
-    const f = ($("friendinput").value || "").trim().slice(0, 20);
-    if (!f) return;
-    const r = await api("/api/friends", {
-      method: "POST", body: { user_name: Net.name, pin: getPin(Net.name), friend: f },
-    });
-    const fm = $("friendmsg");
-    if (r && r.ok) {
-      fm.style.display = ""; fm.textContent = "Added " + f + " ✅";
-      $("friendinput").value = "";
-      Net.openChallenge();
-    } else {
-      fm.style.display = "";
-      fm.textContent = r && r.error === "unknown-user"
-        ? f + " hasn't signed in on the backend yet." : "Couldn't add friend.";
-    }
-  };
-}
-
 Net.inChallenge = () => !!(Net.session && Net.session.status === "active");
 
 function otherName() {
