@@ -106,6 +106,7 @@ function sessionOut(r) {
     createdAt: +r.created_at,
     startedAt: r.started_at ? new Date(r.started_at).getTime() : null,
     finishedAt: r.finished_at ? new Date(r.finished_at).getTime() : null,
+    forfeitedBy: r.forfeited_by || null,
   };
 }
 // Server-side invite sweep. MUST NOT rely on client timers (tabs close).
@@ -373,10 +374,10 @@ app.get("/api/sessions/history", async (req, res) => {
     }
     const rows = (names
       ? await pool.query(
-          `SELECT * FROM sessions WHERE status IN ('finished','declined')
+          `SELECT * FROM sessions WHERE status IN ('finished','declined','forfeited')
            AND (host = ANY($1) OR guest = ANY($1)) ORDER BY created_at DESC LIMIT 50`, [names])
       : await pool.query(
-          `SELECT * FROM sessions WHERE status IN ('finished','declined')
+          `SELECT * FROM sessions WHERE status IN ('finished','declined','forfeited')
            ORDER BY created_at DESC LIMIT 50`)).rows;
     const ids = rows.map(r => r.id);
     const sc = {};
@@ -481,6 +482,15 @@ app.patch("/api/sessions/:id", async (req, res) => {
         "UPDATE sessions SET status='declined', finished_at=now() WHERE id=$1 RETURNING *", [id]);
       s = sessionOut(r.rows[0]);
       io.to("user:" + s.host).emit("invite:declined", { id: s.id, by: c.name });
+    } else if (action === "forfeit") {
+      // Explicit exit or unload mid-duel. Works from pending (cancel) or active.
+      // Double-forfeit (both sides at once): loser gets bad-state, client treats as benign.
+      if (s.status !== "pending" && s.status !== "active")
+        return res.status(409).json({ ok: false, error: "bad-state" });
+      const r = await pool.query(
+        "UPDATE sessions SET status='forfeited', forfeited_by=$2, finished_at=now() WHERE id=$1 RETURNING *",
+        [id, c.name]);
+      s = sessionOut(r.rows[0]);
     } else if (action === "answer") {
       if (s.status !== "active") return res.status(409).json({ ok: false, error: "bad-state" });
       const sel = String(req.body.selected || "");

@@ -181,9 +181,30 @@ Net.init = async function (db) {
     Net._leaveWired = true;
     window.addEventListener("pagehide", () => {
       if (!Net.name) return;
+      try {
+        const s = Net.session;
+        if (s && (s.status === "pending" || s.status === "active") &&
+            (s.host === Net.name || s.guest === Net.name)) {
+          // Unload forfeit: beacon is the only delivery that survives tab close.
+          // Guest holding only an unaccepted invite has no session: nothing to forfeit.
+          const body = JSON.stringify({ actor: Net.name, pin: getPin(Net.name), action: "forfeit" });
+          try {
+            navigator.sendBeacon(BASE + "/api/sessions/" + encodeURIComponent(s.id),
+              new Blob([body], { type: "application/json" }));
+          } catch (e) {}
+        }
+      } catch (e) {}
       api("/api/status/" + encodeURIComponent(Net.name) + "/offline",
         { method: "POST", body: {}, keepalive: true });
       try { Net.socket && Net.socket.disconnect(); } catch (e) {}
+    });
+    // Leaving mid-duel forfeits (pagehide above fires on confirm). Solo play never nags.
+    window.addEventListener("beforeunload", (e) => {
+      const s = Net.session;
+      if (s && s.status === "active" && (s.host === Net.name || s.guest === Net.name)) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
     });
   }
   connectSocket();
@@ -218,10 +239,10 @@ function connectSocket() {
   so.on("invite:new", s => showInvite(s.id, s));
   so.on("invite:expired", ({ id } = {}) => {
     if (pendingInvite && pendingInvite.id === id) { hideInvite(); toast("Challenge expired ⏳"); }
-    if (Net.session && Net.session.id === id) exitChallenge();
+    if (Net.session && Net.session.id === id) clearChallengeState();
   });
   so.on("invite:declined", ({ id, by } = {}) => {
-    if (Net.session && Net.session.id === id) { toast("Challenge declined."); exitChallenge(); }
+    if (Net.session && Net.session.id === id) { toast("Challenge declined."); clearChallengeState(); }
   });
   so.on("session:update", s => onSession(s));
 }
@@ -658,14 +679,19 @@ async function renderDuels(box) {
     const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
     const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
     const decided = s.status === "finished";
+    const forfeited = s.status === "forfeited";
     const tie = decided && hs.ok === gs.ok;
-    const title = !decided ? `${s.guest} declined`
-      : tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins");
+    const foe = s.forfeitedBy || (s.host === Net.name ? s.guest : s.host);
+    const title = decided ? (tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins"))
+      : forfeited ? `${foe} forfeited`
+      : `${s.guest} declined`;
+    const icon = decided ? (tie ? "🤝" : "🏆") : (forfeited ? "🏳" : "🚫");
+    const showScore = decided || forfeited;
     h += `<div class="duel-card${decided ? "" : " declined"}">` +
-      `<div class="tro">${decided ? (tie ? "🤝" : "🏆") : "🚫"}</div>` +
+      `<div class="tro">${icon}</div>` +
       `<div class="who"><b>${esc(s.host)} vs ${esc(s.guest)}</b>` +
       `<div class="meta">${esc(dayKeyOf(s.createdAt))} · ${s.totalQuestions} questions · ${esc(title)}</div></div>` +
-      `<div class="sc">${decided ? hs.ok + "–" + gs.ok : "–"}</div></div>`;
+      `<div class="sc">${showScore ? hs.ok + "–" + gs.ok : "–"}</div></div>`;
   });
   box.innerHTML = h;
 }
@@ -841,10 +867,11 @@ async function createChallenge() {
     watchSession(r.session.id);
     sayChall("Waiting for " + guest + " to accept…");
     // Host-side timeout (server sweep expires independently; this just unblocks UI).
+    // Silent clear, never a forfeit confirm: nobody accepted, nothing to forfeit.
     setTimeout(async () => {
       if (Net.session && Net.session.id === r.session.id && Net.session.status === "pending") {
         toast("Challenge timed out — " + guest + " didn't respond ⏳");
-        exitChallenge();
+        clearChallengeState();
       }
     }, 65000);
   } finally {
@@ -938,7 +965,17 @@ function onSession(s) {
       if (pendingInvite && pendingInvite.id === s.id) hideInvite();
       else toast(s.status === "expired" ? "Challenge expired ⏳" : "Challenge declined.");
     }
-    exitChallenge();
+    clearChallengeState();
+    return;
+  }
+  if (s.status === "forfeited") {
+    const foe = s.forfeitedBy && s.forfeitedBy !== Net.name ? s.forfeitedBy
+      : (s.host === Net.name ? s.guest : s.host);
+    if (was === "active" || was === "pending") {
+      toast(`${foe} forfeited — match over 🏳`);
+      showForfeitEnd(s, foe);
+    }
+    clearChallengeState();
     return;
   }
   if (s.status === "active" && was !== "active") startCountdown(s);
@@ -1284,12 +1321,40 @@ function sayChallHide() {
   }
 }
 function exitChallenge() {
-  const id = Net.session && Net.session.id;
-  if (id && Net.socket && Net.socket.connected) Net.socket.emit("session:leave", { id });
+  const s = Net.session;
+  if (s && (s.status === "pending" || s.status === "active") &&
+      (s.host === Net.name || s.guest === Net.name)) {
+    if (!window.confirm("Forfeit the match? It will count as unfinished.")) return;
+    const id = s.id;
+    // Fire-and-forget: the server broadcast ends it for both sides; bad-state = already over.
+    api("/api/sessions/" + encodeURIComponent(id),
+      { method: "PATCH", body: { actor: Net.name, pin: getPin(Net.name), action: "forfeit" } });
+    if (Net.socket && Net.socket.connected) Net.socket.emit("session:leave", { id });
+    toast("Match forfeited 🏳");
+  }
+  clearChallengeState();
+}
+// Silent teardown: expired/declined/forfeited arrivals, invite timeouts, end-of-match.
+// Never confirms, never writes — the match is already over server-side.
+function clearChallengeState() {
   Net.session = null;
   stopSessPoll();
   exitBattleView();
   Net.revealed = false;
+}
+// Forfeit end screen for the opponent (partial scores stand, marked unfinished).
+function showForfeitEnd(s, foe) {
+  exitBattleView();
+  const n = s.totalQuestions || (s.questionIds || []).length;
+  $("end-trophy").textContent = "🏳";
+  $("end-title").textContent = foe + " forfeited";
+  $("end-sub").textContent = `${Net.myScore}–${Net.frScore} after ${Math.min((s.currentIndex || 0) + 1, n)} of ${n} · recorded as unfinished`;
+  $("end-grid").innerHTML =
+    `<div class="end-card"><b>${Net.myScore}</b><div>you</div></div>` +
+    `<div class="end-card"><b>${Net.frScore}</b><div>${esc(foe)}</div></div>`;
+  $("ov-challend").classList.add("open");
+  if (FX()) FX().sound("neutral");
+  sayChallHide();
 }
 
 Net.exitChallenge = exitChallenge;

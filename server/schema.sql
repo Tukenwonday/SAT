@@ -49,13 +49,14 @@ CREATE TABLE IF NOT EXISTS sessions (
   guest           TEXT NOT NULL REFERENCES users(name) ON DELETE CASCADE,
   total_questions INT NOT NULL CHECK (total_questions BETWEEN 1 AND 100),
   status          TEXT NOT NULL DEFAULT 'pending'
-                  CHECK (status IN ('pending','active','finished','expired','declined')),
+                  CHECK (status IN ('pending','active','finished','expired','declined','forfeited')),
   current_index   INT NOT NULL DEFAULT 0,
   question_ids    TEXT[] NOT NULL DEFAULT '{}',
   current_answers JSONB NOT NULL DEFAULT '{}',
   created_at      BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()) * 1000)::BIGINT, -- unix ms
   started_at      TIMESTAMPTZ NULL,
   finished_at     TIMESTAMPTZ NULL,
+  forfeited_by    TEXT NULL,
   CHECK (host <> guest)
 );
 CREATE INDEX IF NOT EXISTS sessions_guest_status_idx ON sessions(guest, status, created_at DESC);
