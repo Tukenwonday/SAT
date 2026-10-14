@@ -349,69 +349,73 @@ function qNumLabel(person) {
 
 // One pill per player (self first, then others A–Z). Adapts to any headcount:
 // 2 players → you + friend; 3+ → a pill each, wrapping in the top bar.
+function rosterOrder(people) {
+  return people.slice().sort((a, b) =>
+    (a.name === Net.name ? -1 : b.name === Net.name ? 1 : String(a.name).localeCompare(String(b.name))));
+}
+// One compact button (online count) + dropdown roster. Pills didn't scale past a few users.
 function paintPresence(people, now) {
   Net._people = people;
   const box = $("presence"); if (!box) return;
-  const order = people.slice().sort((a, b) =>
-    (a.name === Net.name ? -1 : b.name === Net.name ? 1 : String(a.name).localeCompare(String(b.name))));
-  const seen = new Set();
-  for (const p of order) {
-    seen.add(p.name);
-    paintPill(box, p, now - (p.lastSeen || 0) < 30000);
+  if (!$("rosterbtn") || !$("rosterpanel")) {
+    box.innerHTML = "";
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.id = "rosterbtn"; btn.className = "roster-btn";
+    btn.innerHTML = '<span class="dot"></span><span id="rostercount"></span>';
+    const panel = document.createElement("div");
+    panel.id = "rosterpanel"; panel.className = "roster-panel"; panel.style.display = "none";
+    box.appendChild(btn); box.appendChild(panel);
+    btn.addEventListener("click", ev => {
+      ev.stopPropagation();
+      const p = $("rosterpanel");
+      if (p) p.style.display = p.style.display === "none" ? "" : "none";
+    });
+    if (!Net._rosterWired) {
+      Net._rosterWired = true;
+      document.addEventListener("click", ev => {
+        const p = $("rosterpanel");
+        if (p && p.style.display !== "none" && !p.contains(ev.target)) p.style.display = "none";
+      });
+    }
   }
-  // Drop pills for names that vanished (bar stays truthful as players come/go).
-  box.querySelectorAll(".pres-pill").forEach(el => {
-    if (!seen.has(el.dataset.name)) el.remove();
-  });
+  const btn = $("rosterbtn"), panel = $("rosterpanel");
+  const order = rosterOrder(people);
+  const onlineCount = people.filter(p => now - (p.lastSeen || 0) < 30000).length;
+  const cnt = btn.querySelector("#rostercount");
+  if (cnt) cnt.textContent = onlineCount + " online";
+  btn.classList.toggle("alloff", !onlineCount);
+  panel.innerHTML = "";
+  const MAXR = 30;
+  order.slice(0, MAXR).forEach(p => panel.appendChild(rosterRow(p, now - (p.lastSeen || 0) < 30000)));
+  if (order.length > MAXR) {
+    const more = document.createElement("div");
+    more.className = "roster-more";
+    more.textContent = "+" + (order.length - MAXR) + " more";
+    panel.appendChild(more);
+  }
 }
-
-function findPill(box, name) {
-  const pills = box.querySelectorAll(".pres-pill");
-  for (const el of pills) if (el.dataset.name === name) return el;
-  return null;
-}
-
-function paintPill(box, person, online) {
-  const name = person.name;
-  let pill = findPill(box, name);
-  if (!pill) {
-    pill = document.createElement("span");
-    pill.className = "pres-pill off";
-    pill.dataset.name = name;
-    pill.innerHTML =
-      '<span class="pname"></span>' +
-      '<span class="pq-badge"></span>' +
-      '<span class="ptoday-badge"><span class="count-tick">0</span><span class="ptoday-lbl">today</span></span>';
-    box.appendChild(pill);
-  }
-  pill.classList.toggle("on", online);
-  pill.classList.toggle("off", !online);
-  const pname = pill.querySelector(".pname");
-  if (pname) pname.textContent = name;
-  const qb = pill.querySelector(".pq-badge");
-  // FIX #2: in challenge mode hide which DB question anyone is on
-  // (no Q-number leaking while dueling).
-  if (qb) {
-    if (Net.inChallenge()) { qb.textContent = ""; qb.style.display = "none"; }
-    else { qb.style.display = ""; qb.textContent = qNumLabel(person); }
-  }
-  const tick = pill.querySelector(".count-tick");
-  if (tick) {
-    const today = Net.todayCounts[name] || 0;
-    const old = tick.dataset.v ? +tick.dataset.v : 0;
-    tick.dataset.v = today;
-    countUp(tick, old, today, "");
-  }
+function rosterRow(person, online) {
+  const row = document.createElement("div");
+  row.className = "roster-row" + (online ? " on" : "");
+  row.dataset.name = person.name;
+  row.innerHTML = '<span class="dot"></span><span class="rname"></span>' +
+    '<span class="rtoday"><b class="count-tick">0</b> today</span>';
+  row.querySelector(".rname").textContent = person.name + (person.name === Net.name ? " (you)" : "");
+  const tick = row.querySelector(".count-tick");
+  const today = Net.todayCounts[person.name] || 0;
+  tick.textContent = today;
+  tick.dataset.v = today;
+  return row;
 }
 
 function paintPresenceOffline() {
-  // No connection yet: single gray pill so the bar never looks broken.
+  // No connection yet: single gray button so the bar never looks broken.
   const box = $("presence"); if (!box) return;
   box.innerHTML = "";
-  const pill = document.createElement("span");
-  pill.className = "pres-pill off";
-  pill.innerHTML = '<span class="pname">' + esc(Net.name || "you") + '</span><span class="pq-badge">offline</span>';
-  box.appendChild(pill);
+  const btn = document.createElement("button");
+  btn.type = "button"; btn.id = "rosterbtn"; btn.className = "roster-btn alloff";
+  btn.innerHTML = '<span class="dot"></span><span>offline</span>';
+  box.appendChild(btn);
 }
 
 // -- 4. ANSWER SAVING -> remote attempt ledger --

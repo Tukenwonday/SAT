@@ -1,0 +1,18 @@
+# Same-origin proxy: the browser talks https to Netlify, Netlify forwards
+# plain http to the VPS. Kills mixed-content errors AND hides the backend URL.
+# NOTE: Netlify does not proxy websockets, so Socket.IO runs on polling here.
+# The app's REST fallbacks (invite 10s / session 2s / presence 30s) keep
+# everything working, just slightly less instant than direct socket.
+# If the VPS IP ever changes (no Elastic IP), update it below and redeploy.
+
+[[redirects]]
+  from = "/api/*"
+  to = "http://51.84.109.28:3001/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/socket.io/*"
+  to = "http://51.84.109.28:3001/socket.io/:splat"
+  status = 200
+  force = true

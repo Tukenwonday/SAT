@@ -298,6 +298,27 @@
 
   /* presence pills in topbar */
   #presence { display: inline-flex; gap: 8px; align-items: center; flex-wrap: nowrap; margin-right: 6px; }
+  /* roster (collapsed presence): one button + dropdown, scales to many users */
+  #presence { position: relative; }
+  .roster-btn { display: inline-flex; align-items: center; gap: 7px; height: 28px;
+    padding: 0 12px 0 10px; border-radius: 14px; white-space: nowrap;
+    background: #fff; border: 1.5px solid #d5dbff; color: var(--ink);
+    font-size: 12px; font-weight: 700; font-family: var(--sans); cursor: pointer; }
+  html[data-theme="dark"] .roster-btn { background: #181b31; border-color: #2e335b; }
+  .roster-btn .dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; flex: 0 0 auto;
+    animation: pulse-dot 2s infinite; }
+  .roster-btn.alloff .dot { background: #94a3b8; animation: none; }
+  .roster-panel { position: absolute; top: 34px; right: 0; z-index: 350; min-width: 210px; max-width: 280px;
+    max-height: 42vh; overflow-y: auto; background: var(--panel, #fff); color: var(--ink, #111);
+    border: 1.5px solid #333; border-radius: 14px; box-shadow: 0 14px 40px rgba(20,20,60,.25); padding: 6px; }
+  html[data-theme="dark"] .roster-panel { border-color: #3a3f66; }
+  .roster-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 9px; font-size: 13px; }
+  .roster-row .dot { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; flex: 0 0 auto; }
+  .roster-row.on .dot { background: #10b981; }
+  .roster-row .rname { font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .roster-row .rtoday { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .roster-row .rtoday b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .roster-more { text-align: center; font-size: 12px; color: var(--muted); padding: 6px; }
   .pres-pill { display: inline-flex; align-items: center; gap: 7px; height: 28px;
     padding: 0 10px 0 8px; border-radius: 14px; white-space: nowrap;
     background: #fff; border: 1.5px solid #d5dbff; color: var(--ink);
@@ -489,8 +510,6 @@
 <div id="exam" style="display:none">
   <header id="topbar">
     <div>
-      <div class="sec-title">Section 1, Module 1: Reading and Writing</div>
-      <button class="directions" id="dirbtn">Directions <svg width="11" height="7" viewBox="0 0 11 7" style="vertical-align:1px"><path d="M1 1.2l4.5 4.3L10 1.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div id="difftag" title="Question difficulty"></div>
     </div>
     <div id="cdbox">
@@ -500,8 +519,8 @@
       <div id="presence" title="Live study status"><!-- pills rendered live, one per player --></div>
       <div class="tool"><svg width="14" height="14" viewBox="0 0 14 14"><g fill="none" stroke="#111" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 1.5h4v4M12.5 1.5L8 6M5.5 12.5h-4v-4M1.5 12.5L6 8"/></g></svg><br><span id="zoomval">100%</span></div>
       <button class="tool" id="hlbtn" title="Toggle auto-highlight: select text to highlight instantly"><span><svg width="18" height="18" viewBox="0 0 20 20"><g fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 3.5l3 3L8 15l-4 1 1-4z"/><path d="M12 5l3 3"/></g></svg></span><br>Highlight</button>
-      <button class="tool" id="challengebtn" title="Challenge friend to a live 1v1"><span style="font-size:17px">⚔️</span><br>Challenge</button>
-      <button class="tool" id="historybtn" title="Daily history"><span style="font-size:16px">📊</span><br>History</button>
+      <button class="tool" id="challengebtn" title="Challenge friend to a live 1v1"><span><svg width="17" height="17" viewBox="0 0 18 18"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3.5 3.5L11 11"/><path d="M9.8 11.2l1.4-1.4"/><path d="M14.5 3.5L7 11"/><path d="M8.2 11.2l-1.4-1.4"/></g></svg></span><br>Challenge</button>
+      <button class="tool" id="historybtn" title="Daily history"><span><svg width="17" height="17" viewBox="0 0 18 18"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 15.5h12"/><path d="M5.5 15.5v-5"/><path d="M9 15.5v-8"/><path d="M12.5 15.5v-3"/></g></svg></span><br>History</button>
       <button class="tool" id="morebtn"><svg width="6" height="16" viewBox="0 0 6 16"><g fill="#111"><circle cx="3" cy="3" r="1.6"/><circle cx="3" cy="8" r="1.6"/><circle cx="3" cy="13" r="1.6"/></g></svg><br>More</button>
     </div>
   </header>
@@ -567,13 +586,6 @@
   <div class="mrow"><button class="btn-ghost" id="navclose">Close</button></div>
 </div></div>
 
-<div class="overlay" id="ov-dir"><div class="modal">
-  <h2>Directions</h2>
-  <p>Each question has one best answer. Click an option to answer — the correct choice is shown immediately, with an optional explanation. Click the circle next to an answer to eliminate it, and use Mark for Review to flag questions.</p>
-  <p>Move through all questions with Back / Next or jump with the question navigator below. There is no time limit and nothing to submit. Select any text to highlight it — tap Highlight up top for instant auto-highlight.</p>
-  <div class="mrow"><button class="btn-blue" id="dirclose">Close</button></div>
-</div></div>
-
 <div class="overlay" id="ov-filter"><div class="modal">
   <h2>Filters</h2>
   <p style="color:var(--muted);font-size:13px">Saved automatically. Empty = show all.</p>
@@ -585,14 +597,14 @@
 </div></div>
 
 <div class="overlay" id="ov-history"><div class="modal" style="max-width:720px">
-  <h2>📊 History — answered per day</h2>
+  <h2>History — answered per day</h2>
   <p style="color:var(--muted);font-size:13px">Both players, grouped by day.</p>
   <div id="hist-body"><div class="skel" style="height:120px"></div></div>
   <div class="mrow"><button class="btn-ghost" id="histclose">Close</button></div>
 </div></div>
 
 <div class="overlay" id="ov-challenge"><div class="modal" style="max-width:560px">
-  <h2>⚔️ Challenge a friend</h2>
+  <h2>Challenge a friend</h2>
   <p style="color:var(--muted);font-size:13px">Same questions, same order, live. Picks from the full bank (already-answered included).</p>
   <div class="fsec">Opponent</div>
   <select id="chall-guest"></select>
@@ -1051,8 +1063,6 @@ $('zoomval').addEventListener('click', () => {
   document.documentElement.style.setProperty('--uiscale', ZOOMS[zi]);
   $('zoomval').textContent = Math.round(ZOOMS[zi] * 100) + '%';
 });
-$('dirbtn').addEventListener('click', () => $('ov-dir').classList.add('open'));
-$('dirclose').addEventListener('click', () => $('ov-dir').classList.remove('open'));
 
 /* ── Name box (bottom-left): input + Save. Identity = typed name only. ── */
 function syncName() {
@@ -1394,10 +1404,18 @@ function boot(data) {
   syncShuffleBtn();
   cdApply(); cdTick();
   hlSyncBtn();
-  if (window.Net && Net.init) {
-    try { Net.init(DB); } // async: rejections handled inside; auto-identifies from saved name
+  bootNet(0);
+}
+// Modules (net.js/backend.js) are deferred and the CDN script can be slow, so the
+// question bank sometimes wins the race and window.Net doesn't exist yet when
+// boot() runs. Poll until the online layer is there (10s cap), then init once.
+function bootNet(tries) {
+  if (window.Net && window.Net.init) {
+    try { window.Net.init(DB); } // async: rejections handled inside; auto-identifies from saved name
     catch (e) {}
+    return;
   }
+  if ((tries || 0) < 100) setTimeout(() => bootNet((tries || 0) + 1), 100);
 }
 fetch('sat_db.json').then(r => { if (!r.ok) throw 0; return r.json(); })
   .then(boot).catch(() => { document.querySelector('#loadwrap .spinner').style.display = 'none'; $('loaderr').style.display = 'block'; });
@@ -1591,7 +1609,9 @@ window.FX = (() => {
 })();
 </script>
 <script src="sync-config.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js" defer></script>
 <script type="module" src="net.js"></script>
+<script type="module" src="backend.js"></script>
 <script>
 // Online module failed to load (rare: file:// or missed deploy).
 window.addEventListener('load', () => {
