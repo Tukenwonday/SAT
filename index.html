@@ -586,7 +586,7 @@
 
 <div class="overlay" id="ov-history"><div class="modal" style="max-width:720px">
   <h2>📊 History — answered per day</h2>
-  <p style="color:var(--muted);font-size:13px">Grouped client-side from Firestore attempts. Both players.</p>
+  <p style="color:var(--muted);font-size:13px">Both players, grouped by day.</p>
   <div id="hist-body"><div class="skel" style="height:120px"></div></div>
   <div class="mrow"><button class="btn-ghost" id="histclose">Close</button></div>
 </div></div>
@@ -648,7 +648,7 @@ const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g
 const LS_NAME = 'satbank:name';   // the ONLY identity store: a typed name, no login
 const LS_UI = 'satbank:ui';       // optional UI state: theme/sound/motion + filters/highlight prefs
 // NOTE: legacy keys (satbank:profile:*, exam_all_v1) are NEVER deleted — old
-// solo answers stay on disk untouched. New answers live in Firestore.
+// solo answers stay on disk untouched. New answers live on the remote sync service.
 let DB = [];
 let S = { answers: {}, marked: [], elim: {}, currentIndex: 0, hl: {}, hlAuto: false, hlColor: 'y', hlU: false, name: '', fDom: [], fDif: [], order: null };
 let idx = 0;
@@ -695,7 +695,7 @@ function refreshUI() {
   rebuildF(); renderQ(); syncName(); syncFilterUI(); syncShuffleBtn();
 }
 // Identity = typed name only. Switching names swaps nothing on disk (answers
-// are per-name in Firestore); it just clears in-memory answers for the view.
+// are per-name on the remote sync service); it just clears in-memory answers for the view.
 function setIdentity(name) {
   S.answers = {}; S.currentIndex = 0; idx = 0;
   CH = null; setBanner(null);
@@ -709,7 +709,7 @@ window.App = {
   setChallenge, banner: setBanner, jumpToQid, goTo, renderQ, cur,
   persist, refresh: refreshUI, setIdentity,
   recordLocalAnswer(qid, letter, correct) {
-    // In-memory + immediate paint. Net layer persists to Firestore after.
+    // In-memory + immediate paint. Net layer persists to the remote sync service after.
     S.answers[qid] = letter;
     save(); renderQ();
   },
@@ -738,7 +738,7 @@ $('mm-shuffle').addEventListener('click', () => {
 });
 
 function save() {
-  // localStorage holds ONLY name + UI prefs. Answers live in Firestore
+  // localStorage holds ONLY name + UI prefs. Answers live on the remote sync service
   // (S.answers in memory). Legacy answer keys are left untouched on disk.
   try {
     localStorage.setItem(LS_NAME, S.name || '');
@@ -940,7 +940,7 @@ $('opts').addEventListener('click', ev => {
   S.answers[e.id] = k;
   S.elim[e.id] = (S.elim[e.id] || []).filter(x => x !== k);
   save(); renderQ();
-  // Solo answer → Firestore attempts (replaces old localStorage answer saving).
+  // Solo answer -> remote attempt ledger (replaces old localStorage answer saving).
   if (window.Net && Net.recordAnswer) Net.recordAnswer(e.id, k, null);
   try { // juicy feedback: pop/shake + blip (skipped for reduced-motion users)
     const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1260,7 +1260,7 @@ $('f-clear').addEventListener('click', () => { S.fDom = []; S.fDif = []; applyFi
 $('f-close').addEventListener('click', () => $('ov-filter').classList.remove('open'));
 $('mm-filter').addEventListener('click', () => { $('moreMenu').classList.remove('open'); syncFilterUI(); $('ov-filter').classList.add('open'); });
 // NOTE: mm-reset is wired in the prefs block above (clears UI prefs only;
-// Firestore attempts are never deleted). No second handler here.
+// Remote attempts are never deleted). No second handler here.
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     document.querySelectorAll('.overlay.open').forEach(o => o.classList.remove('open'));
@@ -1368,7 +1368,7 @@ $('challengebtn').addEventListener('click', () => {
 $('challclose').addEventListener('click', () => $('ov-challenge').classList.remove('open'));
 $('mm-reset').addEventListener('click', async () => {
   // Wipes the WHOLE profile: name, every answer, history, presence.
-  if (!confirm('Delete your ENTIRE profile? This erases your name, all answers, history and presence from Firebase. Cannot be undone.')) return;
+  if (!confirm('Delete your ENTIRE profile? This erases your name, all answers, history and saved presence from the cloud. Cannot be undone.')) return;
   try {
     if (window.Net && Net.wipeMyData && Net.name) await Net.wipeMyData();
     localStorage.removeItem('satbank:name');
@@ -1396,7 +1396,7 @@ function boot(data) {
   hlSyncBtn();
   if (window.Net && Net.init) {
     try { Net.init(DB); } // async: rejections handled inside; auto-identifies from saved name
-    catch (e) { console.warn('[net] init failed', e); }
+    catch (e) {}
   }
 }
 fetch('sat_db.json').then(r => { if (!r.ok) throw 0; return r.json(); })
@@ -1590,20 +1590,15 @@ window.FX = (() => {
   };
 })();
 </script>
-<script src="firebase-config.js"></script>
+<script src="sync-config.js"></script>
 <script type="module" src="net.js"></script>
 <script>
-// Net load diagnostic: modules fail silently (dead buttons) when the page is
-// opened via file:// or when net.js missed the deploy.
+// Online module failed to load (rare: file:// or missed deploy).
 window.addEventListener('load', () => {
   setTimeout(() => {
     if (!window.Net) {
-      console.warn('[net] net.js did not load. Open the app via your hosted URL ' +
-        '(not file://), and make sure net.js + firebase-config.js are deployed next to index.html.');
       const b = document.getElementById('challengebtn');
-      if (b) { b.style.opacity = '0.45'; b.title = 'Online code failed to load — see console (F12)'; }
-    } else {
-      console.log('[net] online module loaded, build ' + (Net.BUILD || '?'));
+      if (b) { b.style.opacity = '0.45'; b.title = 'Online mode unavailable'; }
     }
   }, 2500);
 });

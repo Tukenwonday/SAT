@@ -5,7 +5,7 @@
 //
 // These keys are PUBLIC by design (they ship in every Firebase web app).
 // Security comes from firestore.rules, not from hiding these values.
-window.SATBANK_FIREBASE = {
+window.SATBANK_SYNC = {
   apiKey: "AIzaSyB_Ojn_BfQ5O-ib6DjsAAVSEOvSqLjuzmM",
   authDomain: "sat-practice-47885.firebaseapp.com",
   projectId: "sat-practice-47885",

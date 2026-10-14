@@ -4,7 +4,7 @@
 // If Firebase is unconfigured/offline, the app keeps working solo with
 // in-memory answers (legacy local answer keys are never touched).
 //
-// Firestore structure (see firestore.rules):
+// Remote data layout (see server.rules):
 //   status/{name}                         { currentQuestionId, currentIndex, lastSeen }
 //   attempts/{autoId}                     { user_name, question_id, selected, is_correct, answered_at, session_id }
 //   sessions/{sessionId}                  { host, guest, totalQuestions, status, currentIndex, questionIds, startedAt }
@@ -12,7 +12,7 @@
 
 const FB_VER = "10.12.2";
 const FB = "https://www.gstatic.com/firebasejs/" + FB_VER + "/";
-const CFG = (typeof window !== "undefined" && window.SATBANK_FIREBASE) || {};
+const CFG = (typeof window !== "undefined" && window.SATBANK_SYNC) || {};
 export const ONLINE = !!(CFG.apiKey && !/PASTE/i.test(String(CFG.apiKey || "")));
 
 const $ = id => document.getElementById(id);
@@ -51,7 +51,7 @@ const Net = {
   name: "",           // my typed name
   friend: "",         // other status-doc name (discovered live)
   db: [], byId: {},
-  fb: null,           // lazily-loaded firebase modules {auth-less: firestore only}
+  fb: null,           // lazily-loaded cloud SDK modules {auth-less: data store only}
   unsubs: [],
   beatTimer: null,
   myDayKey: "",       // current YYYY-MM-DD
@@ -69,7 +69,7 @@ const Net = {
 };
 window.Net = Net;
 
-// ── lazy Firebase SDK (Firestore only — no Auth needed) ──
+// ── lazy cloud SDK (data store only — no Auth needed) ──
 async function fb() {
   if (Net.fb) return Net.fb;
   const [appM, fsM] = await Promise.all([
@@ -77,8 +77,23 @@ async function fb() {
     import(FB + "firebase-firestore.js"),
   ]);
   const app = appM.initializeApp(CFG);
-  const db = fsM.getFirestore(app);
-  try { await fsM.enableIndexedDbPersistence(db); } catch (e) { /* multi-tab: memory cache fine */ }
+  const db = (function () {
+  const settings = {};
+  if (fsM.persistentLocalCache && fsM.persistentMultipleTabManager) {
+    // Preferred path: persistent local cache shared across tabs. Firestore
+    // serves reads from IndexedDB first (delta only) — the loud re-bill on
+    // every reload / tab focus goes away.
+    settings.localCache = fsM.persistentLocalCache({
+      tabManager: fsM.persistentMultipleTabManager(),
+    });
+  }
+  if (Object.keys(settings).length && fsM.initializeFirestore) {
+    return fsM.initializeFirestore(app, settings);
+  }
+  const fbDb = fsM.getFirestore(app);
+  try { fsM.enableMultiTabIndexedDbPersistence(fbDb).catch(() => {}); } catch (e) {}
+  return fbDb;
+})();
   Net.fb = { ...appM, ...fsM, db };
   return Net.fb;
 }
@@ -92,7 +107,9 @@ Net.init = async function (db) {
   if (!Net._leaveWired) {
     Net._leaveWired = true;
     window.addEventListener("pagehide", signalOffline); // instant offline on tab close
-    document.addEventListener("visibilitychange", handleVisibilityChange); // pause heartbeat on background tabs
+    // 2. We intentionally do NOT register window 'focus' / 'visibilitychange'
+    // data-fetch listeners. onSnapshot keeps data live; refetching on tab
+    // focus is what blows up Firestore reads.
   }
   if (!ONLINE) { paintPresenceOffline(); return; }
   // Auto-identify from saved name (spec: page load restores identity).
@@ -107,16 +124,8 @@ function clearUnsubs() {
   stopHeartbeat();
 }
 
-function handleVisibilityChange() {
-  if (document.visibilityState === "hidden") {
-    stopHeartbeat();
-  } else if (document.visibilityState === "visible") {
-    if (Net.name && ONLINE) {
-      startHeartbeat();
-      heartbeat(); // ping immediately on return
-    }
-  }
-}
+// (handleVisibilityChange removed per the read-saving plan: heartbeat/refresh
+// are driven by onSnapshot + the 30s timer only; no on-focus refetch.)
 
 function startHeartbeat() {
   stopHeartbeat();
@@ -169,15 +178,17 @@ async function identify(name, quiet) {
       todayCount: initToday,
     }, { merge: true });
 
-    // Restore my progress from Firestore attempts
+    // Restore my progress from the cloud answer ledger
     await restoreProgress();
 
-    // Live listeners: presence (only status docs — ~2 docs) + invites
-    listenPresence();
-    listenInvites();
-    startHeartbeat();
+     // Live listeners: presence + invites + progress (onSnapshot, set up ONCE).
+     // No re-fetch on tab focus; Firestore pushes deltas automatically.
+     listenPresence();
+     listenInvites();
+     listenProgress();
+     startHeartbeat();
     if (!quiet) toast("Online as " + name + " ✅");
-  } catch (e) { console.warn("[net] identify failed", e); }
+  } catch (e) {}
 }
 
 function currentQid() {
@@ -239,6 +250,58 @@ function signalOffline() {
 }
 
 // ── 2. TOP BAR presence + 5. TODAY'S COUNT ──
+// 3. Live progress via onSnapshot: our own solved-map + friend's solved-map
+// both stay current. No getDocs and no tab-refetch — Firestore pushes deltas.
+function listenProgress() {
+  fb().then(f => {
+    const ref = f.doc(f.db, "progress", Net.name);
+    const un = f.onSnapshot(ref, snap => {
+      try {
+        const d = snap && snap.exists ? (snap.data() || {}) : {};
+        const solved = (d.solved && typeof d.solved === "object") ? d.solved : {};
+        const S = (App() && App().S) ? App().S : null;
+        Net._lastSyncMs = Date.now();
+        // A merged view: cache wins only for qids the server doesn't have
+        // yet (offline-during answer), server wins on the rest. Never deletes.
+        if (S) {
+          const next = { ...solved };
+          Object.keys(S.answers || {}).forEach(q => { if (!(q in solved)) next[q] = S.answers[q]; });
+          S.answers = next;
+          App().refresh && App().refresh();
+        }
+        try {
+          Net._solvedCache = Net._solvedCache || {};
+          Net._solvedCache[Net.name] = { set: new Set(Object.keys(S ? S.answers : solved)), ms: Date.now() };
+        } catch (e) {}
+        if (Net.name) { saveAnswerCache(Net.name); }
+      } catch (e) {}
+    }, () => {});
+    Net.unsubs.push(un);
+  }).catch(() => {});
+}
+
+let _friendProgUnsub = null;
+function watchFriendProgress(name) {
+  if (_friendProgUnsub) { try { _friendProgUnsub(); } catch (e) {} _friendProgUnsub = null; }
+  if (!name || name === Net.name) return;
+  fb().then(f => {
+    const ref = f.doc(f.db, "progress", name);
+    _friendProgUnsub = f.onSnapshot(ref, snap => {
+      try {
+        const d = snap && snap.exists ? (snap.data() || {}) : {};
+        if (d.solved && typeof d.solved === "object") {
+          Net._solvedCache = Net._solvedCache || {};
+          const exist = Net._solvedCache[name];
+          const set = exist && exist.set ? exist.set : new Set();
+          Object.keys(d.solved).forEach(q => set.add(q));
+          Net._solvedCache[name] = { set, ms: Date.now() };
+        }
+      } catch (e) {}
+    }, () => {});
+    Net.unsubs.push(_friendProgUnsub);
+  }).catch(() => {});
+}
+
 function listenPresence() {
   fb().then(f => {
     const un = f.onSnapshot(f.collection(f.db, "status"), snap => {
@@ -253,11 +316,13 @@ function listenPresence() {
         const count = (p.dayKey === todayKey && typeof p.todayCount === "number") ? p.todayCount : 0;
         Net.todayCounts[p.name] = count;
       });
-      // Default opponent = the most recently seen other player
-      const other = people.find(p => p.name !== Net.name);
-      Net.friend = other ? other.name : (Net.friend || "");
-      if (Net.friend) { try { localStorage.setItem("satbank:friend", Net.friend); } catch (e) {} }
-      paintPresence(people, now);
+    // Default opponent = the most recently seen other player
+    const other = people.find(p => p.name !== Net.name);
+    Net.friend = other ? other.name : (Net.friend || "");
+    if (Net.friend) { try { localStorage.setItem("satbank:friend", Net.friend); } catch (e) {} }
+    // Re-arm the friend's progress listener whenever the opponent changes.
+    watchFriendProgress(Net.friend);
+    paintPresence(people, now);
       // Friend-came-online chime (edge trigger).
       for (const p of people) {
         const online = now - (p.lastSeen || 0) < 30000;
@@ -349,7 +414,7 @@ function paintPresenceOffline() {
   box.appendChild(pill);
 }
 
-// ── 4. ANSWER SAVING → Firestore attempts ──
+// -- 4. ANSWER SAVING -> remote attempt ledger --
 async function restoreProgress() {
   const f = await fb();
   const S = App().S;
@@ -750,7 +815,7 @@ async function pickQuestions(n, guest) {
 
 async function createChallenge() {
   if (!Net.name) { toast("Save your name first 👇"); return; }
-  if (!ONLINE) { toast("Offline — connect Firebase to challenge."); return; }
+  if (!ONLINE) { toast("You're offline — check your connection."); return; }
   let guest = otherName();
   if (!guest || guest === Net.name) {
     toast("No one is online to challenge right now.");
@@ -1208,7 +1273,7 @@ function finishSession(s) {
 function exitBattleView() {
   try {
     // FIX #4A: carry any unrevealed duel pick into solo view instantly.
-    // (Firestore already has it via recordAnswer; revealed answers were
+    // (remote ledger already has it via recordAnswer; revealed answers were
     // already merged in revealDuel. Without this an early exit would hide
     // your last pick until next reload.)
     if (Net._myPick && App() && App().S) {

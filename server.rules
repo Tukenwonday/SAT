@@ -8,6 +8,7 @@ rules_version = '2';
 //   status/{name}                      presence: { currentQuestionId, currentIndex, lastSeen, todayCount, dayKey }
 //   attempts/{autoId}                  append-only ledger (never updated/deleted)
 //   sessions/{id}                      live 1v1 challenges (with embedded currentAnswers)
+//   progress/{name}                    { solved: {qid: letter}, updatedAt }
 service cloud.firestore {
   match /databases/{db}/documents {
 
