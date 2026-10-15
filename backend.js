@@ -376,9 +376,10 @@ function startInvitePoll() {
 function onPresence(people) {
   const now = Date.now();
   Net._people = people;
+  const today = dayKeyOf(now);
   for (const p of people) {
-    if (p.dayKey === dayKeyOf(now) || typeof p.todayCount === "number")
-      Net.todayCounts[p.name] = p.todayCount || 0;
+    // A counter untouched since before today still holds yesterday's number — show 0.
+    Net.todayCounts[p.name] = (p.dayKey === today) ? (p.todayCount || 0) : 0;
   }
   const other = people.filter(p => p.name !== Net.name)
     .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0))[0];

@@ -69,11 +69,13 @@ async function presenceFor(viewer) {
     rows = (await pool.query("SELECT s.* FROM status s WHERE s.name = ANY($1)", [names])).rows;
   }
   const now = Date.now();
+  const today = dayKeyOf(now);
   return rows.map(r => ({
     name: r.name,
     currentIndex: r.current_index,
     lastSeen: +r.last_seen,
-    todayCount: r.today_count,
+    // Counters only reset on next answer — clamp stale (pre-today) rows to 0.
+    todayCount: r.day_key === today ? r.today_count : 0,
     dayKey: r.day_key,
     online: isOnline(r.last_seen, now),
   })).sort((a, b) => (a.name === viewer ? -1 : b.name === viewer ? 1 : a.name.localeCompare(b.name)));
@@ -87,9 +89,11 @@ async function emitPresenceCircle(changedUser) {
       const rows = (await pool.query(
         "SELECT s.* FROM status s ORDER BY s.last_seen DESC LIMIT $1", [MAX_PRESENCE])).rows;
       const now = Date.now();
+      const today = dayKeyOf(now);
       const list = rows.map(r => ({
         name: r.name, currentIndex: r.current_index, lastSeen: +r.last_seen,
-        todayCount: r.today_count, dayKey: r.day_key, online: isOnline(r.last_seen, now),
+        todayCount: r.day_key === today ? r.today_count : 0,
+        dayKey: r.day_key, online: isOnline(r.last_seen, now),
       }));
       io.emit("presence:list", list);
       return;
