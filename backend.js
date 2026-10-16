@@ -136,7 +136,9 @@ const Net = {
   _lastActionMs: 0,
   _lastMovedIdx: undefined,
   todayCounts: {},
-  seenOnline: {},
+  seenOnline: {},    // name -> currently believed around (drives the come-online chime)
+  _seenOfflineAt: {}, // name -> ms when continuous-offline began (hysteresis; see _notePresence)
+  _presenceSeeded: false, // first payload only records states, never toasts
   _people: [],
   _solvedCache: {},
   session: null,
@@ -476,15 +478,55 @@ function onPresence(people) {
   Net.friend = other ? other.name : (Net.friend || "");
   if (Net.friend) { try { localStorage.setItem("satbank:friend", Net.friend); } catch (e) {} }
   paintPresence(people, now);
+  // First payload after boot only seeds states — announcing everyone already
+  // online would chime for people who never left.
+  if (!Net._presenceSeeded) {
+    Net._presenceSeeded = true;
+    Net._seenOfflineAt = Net._seenOfflineAt || {};
+    for (const p of people) {
+      if (p.name === Net.name) continue;
+      const on = isOnlinePerson(p, now);
+      Net.seenOnline[p.name] = !!on;
+      if (!on) Net._seenOfflineAt[p.name] = now;
+      else delete Net._seenOfflineAt[p.name];
+    }
+    return;
+  }
   for (const p of people) {
-    const online = isOnlinePerson(p, now);
-    if (p.name !== Net.name && online && !Net.seenOnline[p.name]) {
-      Net.seenOnline[p.name] = true;
+    if (Net._notePresence(p.name, isOnlinePerson(p, now), now)) {
       if (FX()) FX().sound("chime");
       toast(p.name + " is online 🟢");
-    } else if (!online) Net.seenOnline[p.name] = false;
+    }
   }
 }
+
+// Come-online edge with hysteresis: a name must read offline CONTINUOUSLY for
+// OFFLINE_ARM_MS before it counts as "gone" and re-arms the toast. Transient
+// blips (invisible socket reconnects, throttled hidden-tab heartbeats, slow
+// pushes) recover silently. Returns true only on a genuine arrival.
+// Pure in (name, online, now) + Net.seenOnline/_seenOfflineAt/_presenceSeeded.
+const OFFLINE_ARM_MS = 120000; // 2 min continuously offline = actually gone
+Net._notePresence = function (name, online, now) {
+  if (!name || name === Net.name) return false;
+  Net._seenOfflineAt = Net._seenOfflineAt || {};
+  if (online) {
+    if (Net.seenOnline[name]) { delete Net._seenOfflineAt[name]; return false; }
+    const since = Net._seenOfflineAt[name] || 0;
+    // Announce when: pre-seed sighting (defensive), brand-new name (no offline
+    // record — blips always leave one), or away longer than the arm window.
+    const genuine = !Net._presenceSeeded || !since || (now - since >= OFFLINE_ARM_MS);
+    Net.seenOnline[name] = true;
+    delete Net._seenOfflineAt[name];
+    return genuine;
+  }
+  if (Net.seenOnline[name]) {
+    if (!Net._seenOfflineAt[name]) Net._seenOfflineAt[name] = now; // blip watch starts
+    else if (now - Net._seenOfflineAt[name] >= OFFLINE_ARM_MS) {
+      Net.seenOnline[name] = false; // gone for real; offlineAt kept as proof
+    }
+  }
+  return false;
+};
 
 function rosterOrder(people) {
   return people.slice().sort((a, b) =>
