@@ -1072,7 +1072,7 @@ function syncName() {
   const inp = $('nameinput'), who = $('whoami');
   if (n) {
     inp.style.display = 'none'; $('namesave').style.display = 'none';
-    who.style.display = ''; who.textContent = '👤 ' + n;
+    who.style.display = ''; who.textContent = n;
   } else {
     inp.style.display = ''; $('namesave').style.display = '';
     who.style.display = 'none'; inp.value = '';

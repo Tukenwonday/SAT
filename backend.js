@@ -1235,11 +1235,11 @@ function paintBattle(s) {
   }
   const cb = $("challpill");
   if (cb) cb.style.display = "none";
-  // Duel-only chat button (hidden again by exitBattleView → resetChatUI).
+  // Duel-only chat button takes Next's slot (Next returns on match end).
   try {
     ensureChatDom();
-    const chb = $("chatbtn");
-    if (chb) chb.style.display = "";
+    const nx = $("nextbtn"); if (nx) nx.style.display = "none";
+    const chb = $("chatbtn"); if (chb) chb.style.display = "";
   } catch (e) {}
 }
 function lockWaiting(on) {
@@ -1523,58 +1523,68 @@ function showForfeitEnd(s, foe) {
 // Transport is socket-first with a broadcast-only REST fallback; NOTHING is
 // ever written to the database, so there is nothing to clean up: a reload
 // mid-duel loses chat, and match end drops it via resetChatUI (exitBattleView).
-// Opening: 💬 button in the duel banner, or Enter from anywhere during a duel
-// (except while typing). Arrival: soft blip + unread dot, never a toast/banner.
+// Opening: chat button in the nav row (takes Next's slot all duel long), or
+// Enter from anywhere during a duel (except while typing). Arrival: soft blip
+// + unread dot above the icon, never a toast/banner.
 function ensureChatCss() {
   if ($("chat-css")) return;
   const st = document.createElement("style");
   st.id = "chat-css";
   st.textContent =
-    "#chatbtn{display:none;position:absolute;left:12px;top:50%;transform:translateY(-50%);" +
-    "border:1.5px solid rgba(255,255,255,.55);background:rgba(255,255,255,.16);color:#fff;" +
-    "border-radius:12px;padding:5px 11px;font-size:15px;font-weight:800;cursor:pointer;" +
-    "font-family:var(--sans);transition:transform .18s var(--ease-premium),background .18s}" +
-    "#chatbtn:hover{background:rgba(255,255,255,.3);transform:translateY(-50%) scale(1.06)}" +
-    "#banner.duel #chatbtn{display:inline-flex;align-items:center;gap:6px}" +
-    "#chatdot{display:none;width:9px;height:9px;border-radius:50%;background:#ff5d5d;" +
-    "box-shadow:0 0 0 3px rgba(255,93,93,.35);animation:chatdot-pulse 1.1s infinite}" +
-    "#chatbtn.hasunread #chatdot{display:inline-block}" +
-    "@keyframes chatdot-pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.7);opacity:.65}}" +
+    // Nav chat button: plain black-icon button standing in for Next during duels.
+    "#chatbtn{display:none;position:relative;background:#fff;border:2px solid #111;border-radius:12px;" +
+    "padding:7px 11px;cursor:pointer;font-family:var(--sans);line-height:0;" +
+    "transition:transform .15s var(--ease-premium)}" +
+    "#chatbtn:hover{transform:translateY(-1px)}" +
+    "#chatbtn:active{transform:scale(.93)}" +
+    "#chatbtn svg{display:block}" +
+    // Unread dot floats above the icon; opening the panel (Esc) clears it until
+    // the next arrival.
+    "#chatdot{display:none;position:absolute;top:-7px;right:-4px;width:12px;height:12px;" +
+    "border-radius:50%;background:#ff5d5d;border:2px solid #111;animation:chatdot-pulse 1.1s infinite}" +
+    "#chatbtn.hasunread #chatdot{display:block}" +
+    "@keyframes chatdot-pulse{0%,100%{transform:scale(1)}50%{transform:scale(.72)}}" +
+    // Duel chrome cleanup: the solo progress bar looks broken mid-duel.
+    "#banner.duel + #progbar{display:none}" +
+    // Neo-brutalist panel: thick black borders + hard offset shadows, site palette kept.
     "#chatpanel{position:fixed;right:14px;bottom:86px;width:min(330px,calc(100vw - 28px));" +
     "max-height:min(420px,calc(100dvh - 220px));display:flex;flex-direction:column;z-index:340;" +
-    "background:#fff;border:1.5px solid #d5dbff;border-radius:20px;overflow:hidden;" +
-    "box-shadow:0 18px 50px rgba(31,33,103,.28);" +
-    "opacity:0;visibility:hidden;transform:translateY(18px) scale(.97);" +
+    "background:#fff;border:2.5px solid #111;border-radius:18px;overflow:hidden;" +
+    "box-shadow:7px 7px 0 #111;" +
+    "opacity:0;visibility:hidden;transform:translateY(18px);" +
     "transition:opacity .3s var(--ease-premium),transform .3s var(--ease-premium),visibility .3s}" +
     "#chatpanel.open{opacity:1;visibility:visible;transform:none}" +
-    "#chatlog{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:120px}" +
-    ".chat-msg{max-width:82%;padding:8px 12px;border-radius:14px;font-size:14px;line-height:1.35;" +
-    "font-family:var(--sans);color:var(--ink);word-wrap:break-word;" +
-    "animation:chatpop .28s var(--ease-premium)}" +
+    "#chatlog{flex:1;overflow-y:auto;padding:14px 12px;display:flex;flex-direction:column;gap:9px;min-height:120px;background:#fff}" +
+    ".chat-msg{max-width:82%;padding:8px 12px;border:2px solid #111;border-radius:13px;" +
+    "font-size:14px;line-height:1.35;font-family:var(--sans);color:var(--ink);word-wrap:break-word;" +
+    "box-shadow:3px 3px 0 #111;animation:chatpop .28s var(--ease-premium)}" +
     "@keyframes chatpop{0%{transform:scale(.85) translateY(6px);opacity:0}100%{transform:none;opacity:1}}" +
-    ".chat-msg .who{display:block;font-size:11px;font-weight:800;opacity:.55;margin-bottom:2px}" +
-    ".chat-msg.mine{align-self:flex-end;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}" +
+    ".chat-msg.mine{align-self:flex-end;background:var(--accent);color:#fff}" +
     ".chat-msg.foe{align-self:flex-start;background:#eef1fb}" +
-    "#chatrow{display:flex;gap:8px;padding:10px;border-top:1.5px solid #e6e9f7;background:#f8f9ff}" +
-    "#chatinput{flex:1;border:1.5px solid #d5dbff;border-radius:12px;padding:9px 12px;font-size:14px;" +
-    "font-family:var(--sans);outline:none;min-width:0}" +
-    "#chatinput:focus{border-color:var(--accent)}" +
-    "#chatsend{border:none;border-radius:12px;padding:0 14px;font-size:16px;cursor:pointer;color:#fff;" +
-    "background:linear-gradient(135deg,var(--accent),var(--accent2));font-family:var(--sans)}" +
-    "#chatsend:active{transform:scale(.94)}";
+    "#chatrow{display:flex;gap:8px;padding:10px;border-top:2.5px solid #111;background:#f8f9ff}" +
+    "#chatinput{flex:1;border:2px solid #111;border-radius:12px;padding:9px 12px;font-size:14px;" +
+    "font-family:var(--sans);outline:none;min-width:0;background:#fff}" +
+    "#chatinput:focus{box-shadow:3px 3px 0 var(--accent)}" +
+    "#chatsend{border:2px solid #111;border-radius:12px;padding:0 15px;font-size:16px;cursor:pointer;" +
+    "color:#fff;background:#111;font-family:var(--sans);box-shadow:3px 3px 0 rgba(17,17,17,.25)}" +
+    "#chatsend:active{transform:translate(2px,2px);box-shadow:none}";
   document.head.appendChild(st);
 }
 function ensureChatDom() {
   ensureChatCss();
-  const ban = $("banner");
-  if (ban && !$("chatbtn")) {
+  // The button lives in the nav row, in Next's slot (Next is hidden all duel).
+  const nav = $("navbtns"), next = $("nextbtn");
+  if (nav && next && !$("chatbtn")) {
     const b = document.createElement("button");
     b.type = "button"; b.id = "chatbtn"; b.title = "Duel chat (Enter)";
-    b.innerHTML = "💬<span id=\"chatdot\"></span>";
+    b.innerHTML = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#111" ' +
+      'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7' +
+      'a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>' +
+      '<span id="chatdot"></span>';
     b.style.display = "none";
     b.addEventListener("click", ev => { ev.stopPropagation(); toggleChat(); });
-    const ex = $("challexit");
-    ban.insertBefore(b, ex || null);
+    nav.insertBefore(b, next);
   }
   if (!$("chatpanel")) {
     const p = document.createElement("div");
@@ -1642,14 +1652,11 @@ function renderChatLog() {
   if (!box) return;
   const st = chatState();
   box.innerHTML = "";
+  // No name labels: side + color already say who is who (mine right/blue).
   for (const m of st.log) {
     const d = document.createElement("div");
     d.className = "chat-msg " + (m.from === Net.name ? "mine" : "foe");
-    const w = document.createElement("span");
-    w.className = "who";
-    w.textContent = m.from === Net.name ? "you" : m.from;
-    d.appendChild(w);
-    d.appendChild(document.createTextNode(m.text));
+    d.textContent = m.text; // textContent: no HTML injection possible
     box.appendChild(d);
   }
   box.scrollTop = box.scrollHeight;
@@ -1714,6 +1721,7 @@ function resetChatUI() {
   const p = $("chatpanel"), b = $("chatbtn"), inp = $("chatinput");
   if (p) p.classList.remove("open");
   if (b) { b.classList.remove("hasunread"); b.style.display = "none"; }
+  const nx = $("nextbtn"); if (nx) nx.style.display = ""; // Next returns with solo mode
   if (inp && document.activeElement === inp) { try { inp.blur(); } catch (e) {} }
 }
 
