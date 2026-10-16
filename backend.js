@@ -738,22 +738,42 @@ function ensureHistCss() {
   const st = document.createElement("style");
   st.id = "hist-css";
   st.textContent =
-    ".hist-tabs{display:flex;gap:8px;margin-bottom:12px}" +
-    ".hist-tabs button{flex:1;padding:9px;border-radius:12px;border:1.5px solid #d5dbff;background:#fff;font-family:var(--sans);font-size:14px;font-weight:700;cursor:pointer;color:var(--ink)}" +
-    ".hist-tabs button.sel{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-color:transparent}" +
-    ".daynav{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:10px}" +
-    ".daynav button{border:1.5px solid #333;background:#fff;border-radius:10px;padding:4px 14px;font-size:16px;font-weight:800;cursor:pointer;font-family:var(--sans)}" +
-    ".daynav button:disabled{opacity:.3;cursor:default}" +
-    ".daynav b{font-size:15px;min-width:120px;text-align:center}" +
-    ".accbar{height:8px;border-radius:6px;background:#e9edf4;overflow:hidden;margin-top:4px}" +
-    ".accbar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}" +
-    ".duel-card{display:flex;align-items:center;gap:12px;border:1.5px solid #d5dbff;border-radius:16px;padding:12px 16px;margin-bottom:10px;background:linear-gradient(180deg,#f4f5ff,#e9ecff)}" +
-    ".duel-card .who{flex:1;min-width:0}" +
-    ".duel-card .who b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-    ".duel-card .meta{font-size:12px;color:var(--muted)}" +
-    ".duel-card .tro{font-size:26px;flex:0 0 auto}" +
-    ".duel-card .sc{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}" +
-    ".duel-card.declined{opacity:.65;background:#f4f6fb}";
+    ".hist-tabs{display:flex;gap:0;margin:24px 0 6px;padding:5px;background:#f2f3f8;border-radius:18px}" +
+    ".hist-tabs button{flex:1;padding:12px;font-size:15px;font-weight:800;font-family:var(--sans);" +
+    "color:#6d7285;background:transparent;border:none;border-radius:13px;cursor:pointer;" +
+    "transition:background .2s,color .2s,box-shadow .2s}" +
+    ".hist-tabs button.sel{background:#fff;color:var(--ink);box-shadow:0 3px 10px rgba(16,18,35,.12)}" +
+    ".daynav{display:flex;align-items:center;justify-content:center;gap:14px;margin:18px 0 6px}" +
+    ".daynav button{width:38px;height:38px;border-radius:50%;border:none;background:transparent;" +
+    "font-size:20px;font-weight:800;color:var(--ink);cursor:pointer;line-height:1;transition:background .15s}" +
+    ".daynav button:hover:not(:disabled){background:#eef0f7}" +
+    ".daynav button:disabled{opacity:.25;cursor:default}" +
+    ".daynav b{font-size:15px;font-variant-numeric:tabular-nums;min-width:110px;text-align:center}" +
+    ".prow{display:flex;align-items:center;padding:13px 6px;border-bottom:1px solid #eef0f6;" +
+    "animation:rowin-p1 .35s cubic-bezier(.2,.9,.3,1) backwards}" +
+    ".prow:last-child{border-bottom:none}" +
+    ".prow:hover{background:#fafbff}" +
+    "@keyframes rowin-p1{0%{opacity:0;transform:translateY(6px)}100%{opacity:1;transform:none}}" +
+    ".prow .nm{font-size:15.5px;font-weight:800;letter-spacing:-.2px}" +
+    ".prow .ct{margin-left:auto;font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}" +
+    ".prow .ct.zero{color:#c3c7d4}" +
+    ".drow{padding:15px 6px 13px;text-align:center;border-bottom:1px solid #eef0f6;" +
+    "animation:rowin-p1 .35s cubic-bezier(.2,.9,.3,1) backwards}" +
+    ".drow:last-child{border-bottom:none}" +
+    ".drow:hover{background:#fafbff}" +
+    ".drow.declined{opacity:.55}" +
+    ".dmatch{display:flex;align-items:baseline;justify-content:center;gap:20px}" +
+    ".dmatch .nm{flex:1;min-width:0;font-size:15.5px;font-weight:800;letter-spacing:-.2px;" +
+    "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    ".dmatch .nm.left{text-align:left}" +
+    ".dmatch .nm.right{text-align:right}" +
+    ".dmatch .nm.dim{opacity:.45}" +
+    ".dmatch .mid{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;" +
+    "white-space:nowrap;letter-spacing:-.5px}" +
+    ".dsub{font-size:12.5px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums}" +
+    ".dsub2{font-size:12.5px;color:var(--muted);margin-top:1px}" +
+    ".hempty{padding:34px 10px;text-align:center;font-size:14px;font-weight:600;" +
+    "color:var(--muted);line-height:1.6}";
   document.head.appendChild(st);
 }
 
@@ -765,15 +785,13 @@ Net.renderHistory = async function (tab) {
   if (modal) {
     const t = modal.querySelector("h2");
     if (t) t.textContent = "History";
-    const ps = modal.querySelectorAll("p");
-    if (ps && ps[0]) ps[0].textContent = "Solo grind and duel records.";
   }
   if (!Net.name) { box.innerHTML = "<p>Save your name first (bottom-left), then history will appear here.</p>"; return; }
   if (tab) Net._histTab = tab;
   const cur = Net._histTab || "daily";
   box.innerHTML = `<div class="hist-tabs">` +
-    `<button id="hist-tab-daily" class="${cur === "daily" ? "sel" : ""}">📅 Daily</button>` +
-    `<button id="hist-tab-duels" class="${cur === "duels" ? "sel" : ""}">⚔️ Duels</button></div><div id="hist-main"></div>`;
+    `<button id="hist-tab-daily" class="${cur === "daily" ? "sel" : ""}">Daily</button>` +
+    `<button id="hist-tab-duels" class="${cur === "duels" ? "sel" : ""}">Duels</button></div><div id="hist-main"></div>`;
   $("hist-tab-daily").onclick = () => Net.renderHistory("daily");
   $("hist-tab-duels").onclick = () => Net.renderHistory("duels");
   if (cur === "duels") renderDuels($("hist-main"));
@@ -796,14 +814,13 @@ async function renderDaily(box) {
   const d = days[Net._histDay];
   const names = Net._histCache.names && Net._histCache.names.length ? Net._histCache.names : [Net.name];
   let h = `<div class="daynav"><button id="day-prev"${Net._histDay >= days.length - 1 ? " disabled" : ""}>‹</button>` +
-    `<b>${esc(d.day)}</b>` +
+    `<b>${esc(String(d.day).slice(5))}</b>` +
     `<button id="day-next"${Net._histDay <= 0 ? " disabled" : ""}>›</button></div>`;
-  h += `<table class="hist-table"><tr><th>Player</th><th>Solved</th></tr>`;
-  names.forEach((n) => {
+  names.forEach((n, i) => {
     const c = (d.per && d.per[n]) || { tot: 0, ok: 0 };
-    h += `<tr class="hrow"><td><b>${esc(n)}</b></td><td>${c.tot}</td></tr>`;
+    h += `<div class="prow" style="animation-delay:${Math.min(i * 35, 210)}ms">` +
+      `<span class="nm">${esc(n)}</span><span class="ct${c.tot ? "" : " zero"}">${c.tot}</span></div>`;
   });
-  h += "</table>";
   box.innerHTML = h;
   $("day-prev").onclick = () => { Net._histDay++; renderDaily(box); };
   $("day-next").onclick = () => { Net._histDay--; renderDaily(box); };
@@ -815,26 +832,24 @@ async function renderDuels(box) {
   const r = await api("/api/sessions/history?user=" + encodeURIComponent(Net.name) +
     "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends");
   if (!r || !r.ok) { box.innerHTML = "<p>Couldn't load duels (offline?).</p>"; return; }
-  const list = r.sessions || [];
+  const list = (r.sessions || []).slice(0, 10); // compact popup: latest 10 only
   if (!list.length) { box.innerHTML = "<p>No duels yet — send a ⚔️ challenge!</p>"; return; }
   let h = "";
-  list.forEach((s) => {
+  list.forEach((s, i) => {
     const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
     const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
     const decided = s.status === "finished";
-    const forfeited = s.status === "forfeited";
     const tie = decided && hs.ok === gs.ok;
-    const foe = s.forfeitedBy || (s.host === Net.name ? s.guest : s.host);
-    const title = decided ? (tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins"))
-      : forfeited ? (s.forfeitedBy ? `${foe} forfeited` : "Abandoned")
-      : `${s.guest} declined`;
-    const icon = decided ? (tie ? "🤝" : "🏆") : (forfeited ? "🏳" : "🚫");
-    const showScore = decided || forfeited;
-    h += `<div class="duel-card${decided ? "" : " declined"}">` +
-      `<div class="tro">${icon}</div>` +
-      `<div class="who"><b>${esc(s.host)} vs ${esc(s.guest)}</b>` +
-      `<div class="meta">${esc(dayKeyOf(s.createdAt))} · ${s.totalQuestions} questions · ${esc(title)}</div></div>` +
-      `<div class="sc">${showScore ? hs.ok + "–" + gs.ok : "–"}</div></div>`;
+    const lw = decided ? (hs.ok > gs.ok ? "r" : (hs.ok < gs.ok ? "l" : "")) : ""; // dim the loser
+    const mid = decided ? (hs.ok + "–" + gs.ok) : "–";
+    const title = !decided ? `${s.guest} declined` : tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins");
+    const day = String(dayKeyOf(s.createdAt)).slice(5); // MM-DD: the year is noise
+    h += `<div class="drow${decided ? "" : " declined"}" style="animation-delay:${Math.min(i * 40, 240)}ms">` +
+      `<div class="dmatch"><span class="nm left${lw === "l" ? " dim" : ""}">${esc(s.host)}</span>` +
+      `<span class="mid">${mid}</span>` +
+      `<span class="nm right${lw === "r" ? " dim" : ""}">${esc(s.guest)}</span></div>` +
+      `<div class="dsub">${esc(day)}</div>` +
+      `<div class="dsub2">${s.totalQuestions} questions · ${esc(title)}</div></div>`;
   });
   box.innerHTML = h;
 }
@@ -877,35 +892,60 @@ function isPersonOnline(name) {
   return isOnlinePerson(p, Date.now());
 }
 
-// Online-users list → opponent picker. Click a name = challenge them.
+// Online-users list → opponent cards. Click a card = challenge them.
+// The pick mirrors into the hidden #chall-guest value (same contract as the
+// old dropdown: otherName() reads .value unchanged).
 Net.openChallenge = async function (preset) {
-  const sel = $("chall-guest");
+  const list = $("opp-list");
+  const hid = $("chall-guest");
   const send = $("challsend");
-  const fill = (online) => {
-    if (!sel) return;
+  const paint = (online) => {
+    if (!list) return;
     const others = (online || []).filter(n => n && n !== Net.name);
     const known = [...new Set(others)].sort();
     if (preset && !known.includes(preset)) known.unshift(preset);
-    if (known.length) {
-      sel.innerHTML = known.map(n =>
-        `<option value="${esc(n)}"${n === (preset || Net.friend) ? " selected" : ""}>🟢 ${esc(n)} (online)</option>`).join("");
-      if (send) { send.disabled = false; send.style.opacity = ""; }
-    } else {
-      sel.innerHTML = `<option value="">(no one online right now)</option>`;
-      if (send) { send.disabled = true; send.style.opacity = "0.5"; }
+    list.innerHTML = "";
+    const pick = (n) => {
+      if (hid) hid.value = n || "";
+      list.querySelectorAll(".opp-card").forEach(x => x.classList.toggle("sel", x.dataset.name === n));
+    };
+    if (!known.length) {
+      const d = document.createElement("div");
+      d.className = "opp-empty";
+      d.innerHTML = "No one online right now.<br>Ask them to open the app, then try again.";
+      list.appendChild(d);
+      if (hid) hid.value = "";
+      if (send) send.disabled = true;
+      return;
     }
+    // Default pick: explicit preset, else last opponent if present, else first.
+    const def = (preset && known.includes(preset)) ? preset
+      : (Net.friend && known.includes(Net.friend)) ? Net.friend : known[0];
+    known.forEach(n => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "opp-card";
+      b.dataset.name = n;
+      b.innerHTML = '<span class="ava">' + esc(n.charAt(0).toUpperCase()) + '</span>' +
+        '<span class="who"><b>' + esc(n) + '</b><span>online</span></span>' +
+        '<span class="tick">✓</span>';
+      b.addEventListener("click", () => { pick(n); if (FX()) FX().sound("tick"); });
+      list.appendChild(b);
+    });
+    pick(def);
+    if (send) send.disabled = false;
   };
-  if (sel) {
+  if (list) {
     const now = Date.now();
     const local = (Net._people || [])
       .filter(p => p.name && p.name !== Net.name && isOnlinePerson(p, now))
       .map(p => p.name);
-    fill(local.length ? local : null);
+    paint(local.length ? local : null);
   }
   $("ov-challenge").classList.add("open");
   const r = await api("/api/users/online?user=" + encodeURIComponent(Net.name || "") +
     "&pin=" + encodeURIComponent(getPin(Net.name || "")) + "&scope=friends");
-  if (r && r.ok) fill(r.online);
+  if (r && r.ok) paint(r.online);
 };
 
 async function pickQuestions(n, guest) {
