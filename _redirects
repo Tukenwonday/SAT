@@ -1,5 +1,5 @@
 /admin     /admin.html     200
 /admin/    /admin.html     200
-/server/*  /404.html       404
-/tools/*   /404.html       404
-/*.py      /404.html       404
+/server/*  /               302
+/tools/*   /               302
+/*.py      /               302
