@@ -321,6 +321,37 @@ app.post("/api/answers", async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
 });
 
+// Clear one answer everywhere: deletes ALL ledger rows for (user, question)
+// — solo AND duel attempts — so progress derivation stops seeing it.
+// NOTE: duel history cards derive scores from the ledger, so clearing an old
+// duel answer retroactively lowers that duel's totals. Today's counter is
+// recounted from the remaining rows (no blind decrement, no stale-day bugs).
+app.delete("/api/answers", async (req, res) => {
+  try {
+    const c = await checkPin(req.body.user_name, req.body.pin);
+    if (!c.ok) return res.status(c.error === "bad-pin" ? 403 : 404).json({ ok: false, error: c.error });
+    const qid = String(req.body.question_id || "");
+    if (!qid) return res.status(400).json({ ok: false, error: "bad-question" });
+    const now = Date.now(), today = dayKeyOf(now);
+    const sod = new Date(); sod.setHours(0, 0, 0, 0); // server-local start of today
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const del = await client.query(
+        "DELETE FROM attempts WHERE user_name=$1 AND question_id=$2", [c.name, qid]);
+      const cnt = await client.query(
+        "SELECT COUNT(*)::int AS c FROM attempts WHERE user_name=$1 AND answered_at >= to_timestamp($2 / 1000.0)",
+        [c.name, sod.getTime()]);
+      await client.query("UPDATE status SET today_count=$2, day_key=$3, last_seen=$4 WHERE name=$1",
+        [c.name, cnt.rows[0].c, today, now]);
+      await client.query("COMMIT");
+      res.json({ ok: true, deleted: del.rowCount, todayCount: cnt.rows[0].c });
+      emitPresenceCircle(c.name); // roster today-counts update live
+    } catch (e) { await client.query("ROLLBACK"); throw e; }
+    finally { client.release(); }
+  } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
+});
+
 // Progress = latest answer per question, derived from the ledger (no cache table).
 app.get("/api/progress/:name", async (req, res) => {
   try {

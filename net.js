@@ -589,6 +589,61 @@ Net.recordAnswer = async function (qid, letter, sessionId) {
   } catch (err) { /* offline: in-memory + localStorage cache hold the view; weekly re-sync heals */ }
 };
 
+// Clear one answer EVERYWHERE: local view + caches + the cloud ledger and the
+// progress summary, with today's counter paid back. Single-field query (no
+// composite index) + client-side qid filter, same convention as the readers.
+// Duel answers are match records — clearing is blocked mid-duel.
+Net.clearAnswer = async function (qid) {
+  qid = String(qid || "");
+  if (!qid) return;
+  if (Net.inChallenge()) { toast("Finish the duel first — duel answers are match records ⚔️"); return; }
+  if (App() && App().S) { delete App().S.answers[qid]; if (App().persist) App().persist(); }
+  solvedCacheDel(Net.name, qid);
+  if (App() && App().renderQ) App().renderQ();
+  if (!Net.name) return;
+  saveAnswerCache(Net.name);
+  if (!ONLINE) return;
+  try {
+    const f = await fb();
+    const qq = f.query(f.collection(f.db, "attempts"), f.where("user_name", "==", Net.name));
+    const snap = await f.getDocs(qq).catch(() => null);
+    const todayKey = dayKeyOf(Date.now());
+    const refs = [];
+    let todayDel = 0;
+    if (snap) snap.forEach(dd => {
+      const a = dd.data() || {};
+      if (a.question_id !== qid) return;
+      refs.push(dd.ref);
+      try {
+        const ms = a.answered_at && a.answered_at.toMillis ? a.answered_at.toMillis() : 0;
+        if (ms && dayKeyOf(ms) === todayKey) todayDel++;
+      } catch (e) {}
+    });
+    for (let i = 0; i < refs.length; i += 400) {
+      const b = f.writeBatch(f.db);
+      refs.slice(i, i + 400).forEach(r => b.delete(r));
+      await b.commit();
+    }
+    // Progress summary: drop the key so restoreProgress stops resurrecting it.
+    await f.setDoc(f.doc(f.db, "progress", Net.name),
+      { solved: { [qid]: f.deleteField() }, updatedAt: Date.now() }, { merge: true }).catch(() => {});
+    // Status counter: pay back today's deletions (presence snapshot repaints).
+    if (todayDel > 0) {
+      const sRef = f.doc(f.db, "status", Net.name);
+      const ss = await f.getDoc(sRef).catch(() => null);
+      const cur = ss && ss.exists ? ss.data() || {} : {};
+      if (cur.dayKey === todayKey && typeof cur.todayCount === "number") {
+        const nv = Math.max(0, cur.todayCount - todayDel);
+        Net.todayCounts[Net.name] = nv;
+        await f.setDoc(sRef, { todayCount: nv, lastSeen: Date.now() }, { merge: true }).catch(() => {});
+      } else {
+        Net.todayCounts[Net.name] = 0;
+      }
+    }
+    toast("Answer cleared 🗑️");
+  } catch (err) { /* offline: local clear stands; server wins next sync (resurrects) */ }
+};
+
 // Full profile wipe: deletes ALL my attempts (batched, 400 at a time) plus
 // my status doc — history, today counts and presence all reset.
 Net.wipeMyData = async function () {
@@ -753,6 +808,12 @@ function solvedCacheAdd(name, qid) {
     Net._solvedCache = Net._solvedCache || {};
     const e = Net._solvedCache[name] || (Net._solvedCache[name] = { set: new Set(), ms: Date.now() });
     e.set.add(qid);
+  } catch (err) {}
+}
+function solvedCacheDel(name, qid) {
+  try {
+    const e = Net._solvedCache && Net._solvedCache[name];
+    if (e && e.set) e.set.delete(qid);
   } catch (err) {}
 }
 

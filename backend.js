@@ -176,6 +176,8 @@ Net._forfeited = loadForfeited();
 
 // ── answer cache (same shape as net.js: instant paint on boot) ─────────────
 const LS_ANS = name => "satbank:answers:" + name;
+// Clears made while offline, retried at next identify (needs a reload to sync).
+const LS_CLR = name => "satbank:pending-clears:" + name;
 function loadAnswerCache(name) {
   try {
     const o = JSON.parse(localStorage.getItem(LS_ANS(name)) || "null");
@@ -194,6 +196,12 @@ function solvedCacheAdd(name, qid) {
     Net._solvedCache = Net._solvedCache || {};
     const e = Net._solvedCache[name] || (Net._solvedCache[name] = { set: new Set(), ms: Date.now() });
     e.set.add(qid);
+  } catch (err) {}
+}
+function solvedCacheDel(name, qid) {
+  try {
+    const e = Net._solvedCache && Net._solvedCache[name];
+    if (e && e.set) e.set.delete(qid);
   } catch (err) {}
 }
 async function solvedSetFor(name) {
@@ -348,6 +356,7 @@ async function identify(name, pin, quiet) {
   Net.todayCounts[name] = typeof r.todayCount === "number" ? r.todayCount : 0;
   Net._lastMovedIdx = currentIdx();
   await restoreProgress();
+  await flushPendingClears(); // offline clears re-sync after restore (restore would resurrect them)
   if (Net.socket && Net.socket.connected)
     Net.socket.emit("identify", { name, pin: getPin(name) });
   else {
@@ -676,6 +685,64 @@ Net.recordAnswer = async function (qid, letter, sessionId) {
       NetFS.recordAnswer(qid, letter, sessionId);
   } catch (err) {}
 };
+
+// Clear one answer EVERYWHERE: local view + caches + the server ledger.
+// Duel answers are match records — clearing is blocked mid-duel.
+Net.clearAnswer = async function (qid) {
+  qid = String(qid || "");
+  if (!qid) return;
+  if (Net.inChallenge()) { toast("Finish the duel first — duel answers are match records ⚔️"); return; }
+  if (App() && App().S) { delete App().S.answers[qid]; if (App().persist) App().persist(); }
+  solvedCacheDel(Net.name, qid);
+  if (App() && App().renderQ) App().renderQ();
+  Net._histCache = null;
+  if (!Net.name) return;
+  saveAnswerCache(Net.name);
+  const r = await api("/api/answers", {
+    method: "DELETE",
+    body: { user_name: Net.name, pin: getPin(Net.name), question_id: qid },
+  });
+  if (r && r.ok) {
+    if (typeof r.todayCount === "number") {
+      Net.todayCounts[Net.name] = r.todayCount;
+      bumpToday(r.todayCount);
+    }
+    toast("Answer cleared 🗑️");
+    return;
+  }
+  // Offline: queue for the next identify (restore would otherwise resurrect it).
+  try {
+    const k = LS_CLR(Net.name);
+    const q = JSON.parse(localStorage.getItem(k) || "[]");
+    if (!q.includes(qid)) { q.push(qid); localStorage.setItem(k, JSON.stringify(q)); }
+  } catch (e) {}
+  toast("Cleared offline — will sync on reload 📴");
+};
+// Retry queued offline clears (runs after restoreProgress at identify).
+async function flushPendingClears() {
+  if (!Net.name) return;
+  let q = [];
+  try { q = JSON.parse(localStorage.getItem(LS_CLR(Net.name)) || "[]") || []; } catch (e) {}
+  if (!q.length) return;
+  const S = (App() && App().S) ? App().S : null;
+  const keep = [];
+  for (const qid of q) {
+    const r = await api("/api/answers", {
+      method: "DELETE",
+      body: { user_name: Net.name, pin: getPin(Net.name), question_id: qid },
+    });
+    if (r && r.ok) {
+      if (S) delete S.answers[qid];
+      if (typeof r.todayCount === "number") {
+        Net.todayCounts[Net.name] = r.todayCount;
+        bumpToday(r.todayCount);
+      }
+    } else keep.push(qid);
+  }
+  try { localStorage.setItem(LS_CLR(Net.name), JSON.stringify(keep)); } catch (e) {}
+  saveAnswerCache(Net.name);
+  if (App() && App().refresh) App().refresh();
+}
 
 Net.wipeMyData = async function () {
   if (!Net.name) return;

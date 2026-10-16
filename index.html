@@ -1230,8 +1230,12 @@ $('mm-first').addEventListener('click', () => { $('moreMenu').classList.remove('
 $('mm-search').addEventListener('click', () => { $('moreMenu').classList.remove('open'); openSearch(); });
 $('mm-clear').addEventListener('click', () => {
   $('moreMenu').classList.remove('open');
-  delete S.answers[cur().id];
-  save(); renderQ();
+  const qid = cur() && cur().id;
+  if (!qid) return;
+  // Net.clearAnswer deletes locally + from the remote database (ledger,
+  // progress summary, today counter). Fallback covers pre-Net boot.
+  if (window.Net && Net.clearAnswer) Net.clearAnswer(qid);
+  else { delete S.answers[qid]; save(); renderQ(); }
 });
 
 /* ── Filters (saved in localStorage) ── */
