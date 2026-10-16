@@ -1,9 +1,7 @@
 {
   "name": "satbank-tools",
   "private": true,
-  "description": "One-time / dev-only helpers (answerkey seeding). Not deployed.",
+  "description": "Dev-only helpers (duo-lib unit test). Not deployed.",
   "type": "module",
-  "dependencies": {
-    "firebase-admin": "^12.0.0"
-  }
+  "dependencies": {}
 }

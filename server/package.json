@@ -5,8 +5,7 @@
   "description": "SAT practice VPS backend: Express + PostgreSQL + Socket.IO (multi-user, name+PIN identity)",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "migrate": "node src/migrate-firestore.js"
+    "start": "node src/index.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

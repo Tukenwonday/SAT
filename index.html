@@ -685,7 +685,7 @@ function rebuildF() {
   if (!F.includes(idx)) idx = F[0];
 }
 
-/* ── Challenge mode + App bridge (used by net.js; solo rendering untouched) ── */
+/* ── Challenge mode + App bridge (used by backend.js; solo rendering untouched) ── */
 let CH = null; // array of DB indices while a live 1v1 challenge is active, else null
 const BANNER_DEFAULT = 'THIS IS A PRACTICE TEST';
 function setChallenge(idxs, on) {
@@ -976,7 +976,9 @@ $('opts').addEventListener('click', ev => {
   } catch (err) {}
 });
 $('opts').addEventListener('keydown', ev => {
-  if (ev.key !== 'Enter' && ev.key !== ' ') return;
+  // Space activates the focused option (native button behavior). Enter is
+  // reserved: during duels it opens the chat panel (see backend.js).
+  if (ev.key !== ' ') return;
   const opt = ev.target.closest('.opt');
   if (opt) { ev.preventDefault(); opt.click(); }
 });
@@ -1103,7 +1105,7 @@ function editName() {
 $('whoami').addEventListener('dblclick', editName);
 $('whoami').style.cursor = 'pointer';
 $('whoami').title = 'Double-click to change your name';
-/* Tiny toast helper (used before net.js loads too). */
+/* Tiny toast helper (used before backend.js loads too). */
 function toast(msg, ms) {
   const box = $('toasts'); if (!box) return;
   const el = document.createElement('div');
@@ -1410,7 +1412,7 @@ function boot(data) {
   hlSyncBtn();
   bootNet(0);
 }
-// Modules (net.js/backend.js) are deferred and the CDN script can be slow, so the
+// The backend.js module is deferred and the CDN script can be slow, so the
 // question bank sometimes wins the race and window.Net doesn't exist yet when
 // boot() runs. Poll until the online layer is there (10s cap), then init once.
 function bootNet(tries) {
@@ -1479,6 +1481,7 @@ window.FX = (() => {
       tone(262, 262, 0, 0.7, 'triangle', 0.05);
     },
     nudge() { tone(880, 880, 0, 0.12); tone(1174, 1174, 0.14, 0.2); },
+    msg() { tone(990, 990, 0, 0.07, 'sine', 0.05); tone(1320, 1320, 0.06, 0.09, 'sine', 0.04); }, // duel chat arrival: soft blip, no banner
   };
   function sound(name, arg) {
     if (!store.on) return;
@@ -1614,7 +1617,6 @@ window.FX = (() => {
 </script>
 <script src="sync-config.js"></script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" defer></script>
-<script type="module" src="net.js"></script>
 <script type="module" src="backend.js"></script>
 <script>
 // Online module failed to load (rare: file:// or missed deploy).

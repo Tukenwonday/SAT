@@ -1,13 +1,12 @@
-// backend.js — VPS online layer (Node + Express + Postgres + Socket.IO).
-// Same Net.* surface as net.js (Firestore), so index.html call sites are unchanged.
-// Activates ONLY when USE_BACKEND (see bottom). Otherwise window.Net stays Firestore's.
+// backend.js — the online layer (Node + Express + Postgres + Socket.IO).
+// Owns window.Net unconditionally.
 //
 // Identity = typed name + PIN (plain-text collision protection, not real security).
 // PIN is stored per-name in localStorage; prompted once when unknown.
 
 const BC = (typeof window !== "undefined" && window.SATBANK_BACKEND) || {};
 // URL resolution: ?backendUrl=... query param > localStorage > sync-config.js file.
-// (So local testing needs no file edit: just open with ?backend=1&backendUrl=http://localhost:3001)
+// (So local testing needs no file edit: just open with ?backendUrl=http://localhost:3001)
 function baseUrl() {
   try {
     const q = new URLSearchParams(location.search).get("backendUrl");
@@ -18,20 +17,6 @@ function baseUrl() {
   return String(BC.url || "").replace(/\/+$/, "");
 }
 const BASE = baseUrl();
-function flagOn() {
-  try {
-    if (/[?&]backend=0\b/.test(location.search)) return false;
-    if (/[?&]backend=1\b/.test(location.search)) return true;
-    if (localStorage.getItem("satbank_backend") === "0") return false;
-    if (localStorage.getItem("satbank_backend") === "1") return true;
-  } catch (e) {}
-  return !!BC.enabled;
-}
-export const USE_BACKEND = !!(BASE && flagOn());
-if (!USE_BACKEND) {
-  window.NetBackend = { on: false, USE_BACKEND };
-  // Export nothing else: net.js owns window.Net in Firestore mode.
-} else {
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -133,7 +118,7 @@ function isOnlinePerson(p, now) {
   return ((now || Date.now()) - (p.lastSeen || 0)) < 30000;
 }
 
-// ── Net object (same public surface as net.js) ─────────────────────────────
+// ── Net object (public online surface used by index.html) ────────────────────
 const Net = {
   on: true,
   backend: true,
@@ -167,14 +152,13 @@ const Net = {
   _beatSentMs: 0,    // last heartbeat sent
   _invitePollHiddenMs: 0,
   _forfeited: {},    // session ids I gave up on (survives reload via sessionStorage)
+  _chat: null,       // duel chat: { sid, open, unread, log[] } — ephemeral, never stored
 };
-// Keep the Firestore impl (loaded first) for best-effort dual-write of answers.
-const NetFS = (window.Net && !window.Net.backend) ? window.Net : null;
 window.Net = Net;
 window.NetBackend = Net;
 Net._forfeited = loadForfeited();
 
-// ── answer cache (same shape as net.js: instant paint on boot) ─────────────
+// ── answer cache (instant paint on boot) ─────────────
 const LS_ANS = name => "satbank:answers:" + name;
 // Clears made while offline, retried at next identify (needs a reload to sync).
 const LS_CLR = name => "satbank:pending-clears:" + name;
@@ -302,6 +286,7 @@ function connectSocket() {
     if (Net.session && Net.session.id === id) { toast("Challenge declined."); clearChallengeState(); }
   });
   so.on("session:update", s => onSession(s));
+  so.on("chat:new", m => onChatMsg(m));
 }
 // REST polling when the socket is down (same 30s cadence, no focus-refetch).
 function startPollFallback() {
@@ -367,7 +352,7 @@ async function identify(name, pin, quiet) {
       "&pin=" + encodeURIComponent(getPin(name)));
     if (inv && inv.invite) showInvite(inv.invite.id, inv.invite);
   }
-  // Rejoin a duel that was live across reload (scores restart — same as Firestore build).
+  // Rejoin a duel that was live across reload (scores restart from zero).
   // Sessions I forfeited are never resurrected: the server gets a cleanup
   // forfeit in case the original write died with the reload. Active sessions
   // ask first — no more surprise 3-2-1 countdown loops.
@@ -401,9 +386,6 @@ async function identify(name, pin, quiet) {
   startPresenceWatchdog();
   startHeartbeat();
   if (!quiet) toast("Online as " + name + " ✅");
-  if (NetFS) { // dual-write target prep (answers only — no Firestore listeners started)
-    try { NetFS.name = name; NetFS.db = Net.db; NetFS.byId = Net.byId; } catch (e) {}
-  }
 }
 
 function currentIdx() { try { return App().idx || 0; } catch (err) { return 0; } }
@@ -679,11 +661,6 @@ Net.recordAnswer = async function (qid, letter, sessionId) {
   }
   Net._histCache = null; // daily tab refetches next open
   if (ok && !sessionId && FX()) FX().burst("mini");
-  // Parallel-run dual-write (best effort; Firestore impl never started listeners).
-  try {
-    if (localStorage.getItem("satbank_dualwrite") === "1" && NetFS && NetFS.recordAnswer)
-      NetFS.recordAnswer(qid, letter, sessionId);
-  } catch (err) {}
 };
 
 // Clear one answer EVERYWHERE: local view + caches + the server ledger.
@@ -862,7 +839,7 @@ async function renderDuels(box) {
   box.innerHTML = h;
 }
 
-// ── challenge mode (same duel state machine as net.js; VPS transport) ──────
+// ── challenge mode (live 1v1 duel state machine; VPS transport) ─────────────
 function wireChallengeUI() {
   const pick = $("chall-pick");
   if (pick && !pick.dataset.wired) {
@@ -883,6 +860,8 @@ function wireChallengeUI() {
   const ia = $("invite-accept"), idc = $("invite-decline");
   if (ia) ia.onclick = () => acceptChallenge().catch(() => {});
   if (idc) idc.onclick = () => declineChallenge().catch(() => {});
+  ensureChatDom();
+  wireChatKeys();
 }
 Net.inChallenge = () => !!(Net.session && Net.session.status === "active");
 
@@ -1256,6 +1235,12 @@ function paintBattle(s) {
   }
   const cb = $("challpill");
   if (cb) cb.style.display = "none";
+  // Duel-only chat button (hidden again by exitBattleView → resetChatUI).
+  try {
+    ensureChatDom();
+    const chb = $("chatbtn");
+    if (chb) chb.style.display = "";
+  } catch (e) {}
 }
 function lockWaiting(on) {
   document.querySelectorAll("#opts .opt").forEach(o => o.classList.toggle("locked", !!on));
@@ -1328,8 +1313,8 @@ Net.decorate = function () {
   }
 };
 
-// NOTE: ledger write happens server-side on answer (unlike Firestore where the
-// client wrote attempts separately). Do NOT call recordAnswer here — no double insert.
+// NOTE: the ledger write happens server-side on answer, so there is exactly
+// one insert per duel answer. Do NOT call recordAnswer here — no double insert.
 Net.answerChallenge = async function (qid, letter) {
   const s = Net.session;
   if (!s || s.status !== "active") return;
@@ -1381,10 +1366,6 @@ Net.answerChallenge = async function (qid, letter) {
   if (tc !== null) { Net.todayCounts[Net.name] = tc; bumpToday(tc); }
   else bumpToday();
   Net._histCache = null;
-  try {
-    if (localStorage.getItem("satbank_dualwrite") === "1" && NetFS && NetFS.recordAnswer)
-      NetFS.recordAnswer(qid, letter, s.id);
-  } catch (err) {}
 };
 
 async function revealDuel(s, mDoc, fDoc) {
@@ -1467,6 +1448,7 @@ function exitBattleView() {
   Net._myPick = null; Net._reveals = {}; Net.revealed = false;
   lockWaiting(false);
   sayChallHide();
+  resetChatUI(); // duel chat is ephemeral: panel, button, log and unread all go
   const cb = $("challpill"); if (cb) cb.style.display = "none";
   const sp = $("scorepill"); if (sp) sp.style.display = "none";
   const nav = $("navpill");
@@ -1537,6 +1519,202 @@ function showForfeitEnd(s, foe) {
   sayChallHide();
 }
 
-Net.exitChallenge = exitChallenge;
+// ── duel chat (ephemeral, duels only) ─────────────────────────────────────
+// Transport is socket-first with a broadcast-only REST fallback; NOTHING is
+// ever written to the database, so there is nothing to clean up: a reload
+// mid-duel loses chat, and match end drops it via resetChatUI (exitBattleView).
+// Opening: 💬 button in the duel banner, or Enter from anywhere during a duel
+// (except while typing). Arrival: soft blip + unread dot, never a toast/banner.
+function ensureChatCss() {
+  if ($("chat-css")) return;
+  const st = document.createElement("style");
+  st.id = "chat-css";
+  st.textContent =
+    "#chatbtn{display:none;position:absolute;left:12px;top:50%;transform:translateY(-50%);" +
+    "border:1.5px solid rgba(255,255,255,.55);background:rgba(255,255,255,.16);color:#fff;" +
+    "border-radius:12px;padding:5px 11px;font-size:15px;font-weight:800;cursor:pointer;" +
+    "font-family:var(--sans);transition:transform .18s var(--ease-premium),background .18s}" +
+    "#chatbtn:hover{background:rgba(255,255,255,.3);transform:translateY(-50%) scale(1.06)}" +
+    "#banner.duel #chatbtn{display:inline-flex;align-items:center;gap:6px}" +
+    "#chatdot{display:none;width:9px;height:9px;border-radius:50%;background:#ff5d5d;" +
+    "box-shadow:0 0 0 3px rgba(255,93,93,.35);animation:chatdot-pulse 1.1s infinite}" +
+    "#chatbtn.hasunread #chatdot{display:inline-block}" +
+    "@keyframes chatdot-pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.7);opacity:.65}}" +
+    "#chatpanel{position:fixed;right:14px;bottom:86px;width:min(330px,calc(100vw - 28px));" +
+    "max-height:min(420px,calc(100dvh - 220px));display:flex;flex-direction:column;z-index:340;" +
+    "background:#fff;border:1.5px solid #d5dbff;border-radius:20px;overflow:hidden;" +
+    "box-shadow:0 18px 50px rgba(31,33,103,.28);" +
+    "opacity:0;visibility:hidden;transform:translateY(18px) scale(.97);" +
+    "transition:opacity .3s var(--ease-premium),transform .3s var(--ease-premium),visibility .3s}" +
+    "#chatpanel.open{opacity:1;visibility:visible;transform:none}" +
+    "#chatlog{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:120px}" +
+    ".chat-msg{max-width:82%;padding:8px 12px;border-radius:14px;font-size:14px;line-height:1.35;" +
+    "font-family:var(--sans);color:var(--ink);word-wrap:break-word;" +
+    "animation:chatpop .28s var(--ease-premium)}" +
+    "@keyframes chatpop{0%{transform:scale(.85) translateY(6px);opacity:0}100%{transform:none;opacity:1}}" +
+    ".chat-msg .who{display:block;font-size:11px;font-weight:800;opacity:.55;margin-bottom:2px}" +
+    ".chat-msg.mine{align-self:flex-end;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}" +
+    ".chat-msg.foe{align-self:flex-start;background:#eef1fb}" +
+    "#chatrow{display:flex;gap:8px;padding:10px;border-top:1.5px solid #e6e9f7;background:#f8f9ff}" +
+    "#chatinput{flex:1;border:1.5px solid #d5dbff;border-radius:12px;padding:9px 12px;font-size:14px;" +
+    "font-family:var(--sans);outline:none;min-width:0}" +
+    "#chatinput:focus{border-color:var(--accent)}" +
+    "#chatsend{border:none;border-radius:12px;padding:0 14px;font-size:16px;cursor:pointer;color:#fff;" +
+    "background:linear-gradient(135deg,var(--accent),var(--accent2));font-family:var(--sans)}" +
+    "#chatsend:active{transform:scale(.94)}";
+  document.head.appendChild(st);
+}
+function ensureChatDom() {
+  ensureChatCss();
+  const ban = $("banner");
+  if (ban && !$("chatbtn")) {
+    const b = document.createElement("button");
+    b.type = "button"; b.id = "chatbtn"; b.title = "Duel chat (Enter)";
+    b.innerHTML = "💬<span id=\"chatdot\"></span>";
+    b.style.display = "none";
+    b.addEventListener("click", ev => { ev.stopPropagation(); toggleChat(); });
+    const ex = $("challexit");
+    ban.insertBefore(b, ex || null);
+  }
+  if (!$("chatpanel")) {
+    const p = document.createElement("div");
+    p.id = "chatpanel";
+    p.innerHTML = '<div id="chatlog"></div>' +
+      '<div id="chatrow"><input id="chatinput" maxlength="200" placeholder="Message… (Enter to send)" autocomplete="off">' +
+      '<button id="chatsend" title="Send">➤</button></div>';
+    document.body.appendChild(p);
+    $("chatsend").addEventListener("click", () => doSendChat().catch(() => {}));
+    $("chatinput").addEventListener("keydown", ev => {
+      ev.stopPropagation(); // keep global duel keys (incl. Enter-to-open) out of the input
+      if (ev.key === "Enter") { ev.preventDefault(); doSendChat().catch(() => {}); }
+      else if (ev.key === "Escape") { toggleChat(false); }
+    });
+  }
+}
+// Global duel keys: Enter (from anywhere except editable fields) opens chat,
+// Esc closes it. Answering via Enter was removed (mouse/Space) so no conflict.
+function wireChatKeys() {
+  if (Net._chatKeysWired) return;
+  Net._chatKeysWired = true;
+  document.addEventListener("keydown", ev => {
+    if (ev.key === "Escape") {
+      if (Net._chat && Net._chat.open) { toggleChat(false); ev.stopPropagation(); }
+      return;
+    }
+    if (ev.key !== "Enter") return;
+    const t = ev.target || {};
+    const tag = ((t.tagName || "") + "").toUpperCase();
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable) return;
+    if (!Net.inChallenge || !Net.inChallenge()) return;
+    if (Net._chat && Net._chat.open) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    toggleChat(true);
+  });
+}
+function chatState() {
+  Net._chat = Net._chat || { sid: null, open: false, unread: 0, log: [] };
+  const s = Net.session;
+  if (Net._chat.sid !== (s && s.id)) {
+    Net._chat.sid = s && s.id;
+    Net._chat.log = [];
+    Net._chat.unread = 0;
+  }
+  return Net._chat;
+}
+function toggleChat(force) {
+  if (!Net.inChallenge || !Net.inChallenge()) return;
+  ensureChatDom();
+  const st = chatState();
+  st.open = (typeof force === "boolean") ? force : !st.open;
+  const p = $("chatpanel"), b = $("chatbtn");
+  if (p) { p.classList.toggle("open", st.open); if (st.open) renderChatLog(); }
+  if (st.open) {
+    st.unread = 0;
+    if (b) b.classList.remove("hasunread");
+    const inp = $("chatinput");
+    if (inp) setTimeout(() => { try { inp.focus(); } catch (e) {} }, 80);
+  } else if (b) b.classList.toggle("hasunread", st.unread > 0);
+}
+Net.toggleChat = toggleChat;
+function renderChatLog() {
+  const box = $("chatlog");
+  if (!box) return;
+  const st = chatState();
+  box.innerHTML = "";
+  for (const m of st.log) {
+    const d = document.createElement("div");
+    d.className = "chat-msg " + (m.from === Net.name ? "mine" : "foe");
+    const w = document.createElement("span");
+    w.className = "who";
+    w.textContent = m.from === Net.name ? "you" : m.from;
+    d.appendChild(w);
+    d.appendChild(document.createTextNode(m.text));
+    box.appendChild(d);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+function pushChatMsg(from, text) {
+  const st = chatState();
+  st.log.push({ from, text, at: Date.now() });
+  if (st.log.length > 100) st.log.splice(0, st.log.length - 100);
+  if (st.open) renderChatLog();
+  else {
+    st.unread++;
+    const b = $("chatbtn");
+    if (b) b.classList.add("hasunread");
+  }
+}
+function onChatMsg(m) {
+  try {
+    if (!m || typeof m.text !== "string") return;
+    const s = Net.session;
+    // Duels only, this duel only, foe only — own echoes and strangers dropped.
+    if (!s || s.status !== "active" || m.sessionId !== s.id) return;
+    const foe = s.host === Net.name ? s.guest : s.host;
+    if (m.from !== foe) return;
+    pushChatMsg(m.from, String(m.text).slice(0, 200));
+    if (FX()) FX().sound("msg"); // blip only — never a toast/banner mid-duel
+  } catch (e) {}
+}
+async function doSendChat() {
+  const inp = $("chatinput");
+  const text = ((inp && inp.value) || "").trim().slice(0, 200);
+  if (!text) return;
+  const s = Net.session;
+  if (!s || s.status !== "active" || !Net.inChallenge()) { toast("Chat lives inside duels only ⚔️"); return; }
+  if (inp) inp.value = "";
+  const payload = { sessionId: s.id, actor: Net.name, pin: getPin(Net.name), text };
+  let done = false, slow = false;
+  if (Net.socket && Net.socket.connected) {
+    try {
+      const ack = await new Promise(res => {
+        let settled = false;
+        Net.socket.emit("chat:send", payload, a => { if (!settled) { settled = true; res(a); } });
+        setTimeout(() => { if (!settled) { settled = true; res(null); } }, 4000);
+      });
+      if (ack && ack.ok) done = true;
+      else if (ack && ack.error === "too-fast") slow = true;
+    } catch (e) {}
+  }
+  if (!done && !slow) {
+    const r = await api("/api/sessions/" + encodeURIComponent(s.id) + "/chat",
+      { method: "POST", body: { actor: Net.name, pin: getPin(Net.name), text } });
+    if (r && r.ok) done = true;
+    else if (r && r.error === "too-fast") slow = true;
+  }
+  if (slow) { toast("Slow down a touch 🐢"); if (inp) inp.value = text; return; }
+  if (!done) { toast("Couldn't send (offline?)"); if (inp) inp.value = text; return; }
+  pushChatMsg(Net.name, text);
+}
+Net.sendChat = doSendChat;
+// Ephemeral teardown: panel, button, log and unread all go with the duel.
+function resetChatUI() {
+  Net._chat = { sid: null, open: false, unread: 0, log: [] };
+  const p = $("chatpanel"), b = $("chatbtn"), inp = $("chatinput");
+  if (p) p.classList.remove("open");
+  if (b) { b.classList.remove("hasunread"); b.style.display = "none"; }
+  if (inp && document.activeElement === inp) { try { inp.blur(); } catch (e) {} }
+}
 
-} // end USE_BACKEND
+Net.exitChallenge = exitChallenge;

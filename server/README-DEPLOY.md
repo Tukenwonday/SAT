@@ -34,17 +34,15 @@ sudo ufw allow 22,80,443/tcp && sudo ufw enable
 (crontab -l; echo "0 3 * * * pg_dump \$DATABASE_URL | gzip > ~/satbank-backup.sql.gz") | crontab -
 ```
 
-## 2. Parallel run → cutover → rollback
+## 2. Cutover → rollback
 
-1. Deploy frontend with `SATBANK_BACKEND = { url: "https://your-domain.com", enabled: false }`.
-   Test one machine via `?backend=1` (answer → presence pills → challenge → history).
-2. Parallel run: set `localStorage.satbank_dualwrite = "1"` on every machine —
-   answers also forward to Firestore (best effort), so rollback keeps data.
-3. Cutover at a low-traffic hour: flip `enabled: true`, redeploy static files.
-   Keep the Firestore project untouched for 1 week.
-4. Rollback: flip `enabled: false` and redeploy (or just run
-   `localStorage.satbank_backend = "0"`). No restore needed.
-5. After 1 clean week: remove dual-write, then decommission Firebase.
+1. Deploy frontend with `SATBANK_BACKEND = { url: "https://your-domain.com" }`.
+   Test one machine via `?backendUrl=https://your-domain.com` (answer → presence
+   roster → challenge → history → duel chat).
+2. Cutover at a low-traffic hour: point `sync-config.js` at the VPS, redeploy
+   static files. Both players hard-refresh once to pick up the new bundle.
+3. Rollback: redeploy the previous frontend bundle (or `git revert` + push).
+   No data restore needed — the database is untouched by frontend deploys.
 
 ## 3. Ops notes
 

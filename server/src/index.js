@@ -317,7 +317,7 @@ app.post("/api/answers", async (req, res) => {
         [c.name, today, now])).rows[0];
       await client.query("COMMIT");
       res.json({ ok: true, todayCount: st ? st.today_count : 0 });
-      emitPresenceCircle(c.name); // instant today-count push (Firestore onSnapshot parity)
+      emitPresenceCircle(c.name); // instant today-count push to the roster
     } catch (e) { await client.query("ROLLBACK"); throw e; }
     finally { client.release(); }
   } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
@@ -441,10 +441,10 @@ app.get("/api/sessions/history", async (req, res) => {
     }
     const rows = (names
       ? await pool.query(
-          `SELECT * FROM sessions WHERE status IN ('finished','declined','forfeited')
+          `SELECT * FROM sessions WHERE status IN ('finished','declined')
            AND (host = ANY($1) OR guest = ANY($1)) ORDER BY created_at DESC LIMIT 50`, [names])
       : await pool.query(
-          `SELECT * FROM sessions WHERE status IN ('finished','declined','forfeited')
+          `SELECT * FROM sessions WHERE status IN ('finished','declined')
            ORDER BY created_at DESC LIMIT 50`)).rows;
     const ids = rows.map(r => r.id);
     const sc = {};
@@ -663,7 +663,7 @@ app.patch("/api/sessions/:id", async (req, res) => {
         [id, JSON.stringify(entry), c.name]);
       if (!upd.rowCount) return res.json({ ok: false, error: "duplicate" });
       s = sessionOut(upd.rows[0]);
-      // Duel answers also count in the ledger (same as Firestore build).
+      // Duel answers also count in the ledger (same source as solo answers).
       const now = Date.now(), today = dayKeyOf(now);
       await pool.query(
         "INSERT INTO attempts(user_name, question_id, selected, is_correct, session_id) VALUES($1,$2,$3,$4,$5)",
@@ -691,6 +691,49 @@ app.patch("/api/sessions/:id", async (req, res) => {
     io.to("session:" + s.id).emit("session:update", s);
     res.json({ ok: true, session: s, ...(typeof todayCount === "number" ? { todayCount } : {}) });
   } catch (e) { console.error("patch session", e.message); res.status(500).json({ ok: false, error: "server" }); }
+});
+
+// ── Duel chat (ephemeral: broadcast-only, NEVER stored) ─────────────────────
+// Messages live only in the two players' browsers. No table, no writes, no
+// cleanup: a reload mid-duel loses chat, and match end drops it entirely.
+const CHAT_MAX_LEN = 200;
+const CHAT_MIN_INTERVAL_MS = 1000;
+const _chatLastMs = new Map(); // name -> ms of last accepted message (single instance)
+async function checkChatSend(sessionId, actor, pin, text) {
+  const c = await checkPin(actor, pin);
+  if (!c.ok) return { ok: false, error: c.error };
+  const msg = String(text || "").trim().slice(0, CHAT_MAX_LEN);
+  if (!msg) return { ok: false, error: "bad-text" };
+  const cur = (await pool.query("SELECT * FROM sessions WHERE id=$1", [String(sessionId)])).rows[0];
+  if (!cur) return { ok: false, error: "unknown-session" };
+  const s = sessionOut(cur);
+  if (s.status !== "active") return { ok: false, error: "bad-state" };
+  if (c.name !== s.host && c.name !== s.guest) return { ok: false, error: "forbidden" };
+  if (_chatLastMs.size > 1000) _chatLastMs.clear();
+  const last = _chatLastMs.get(c.name) || 0;
+  if (Date.now() - last < CHAT_MIN_INTERVAL_MS) return { ok: false, error: "too-fast" };
+  _chatLastMs.set(c.name, Date.now());
+  return { ok: true, session: s, from: c.name, text: msg };
+}
+function emitChat(sessionId, from, text) {
+  io.to("session:" + sessionId).emit("chat:new",
+    { sessionId, from, text, at: Date.now() });
+}
+
+// REST send-fallback (same validation, broadcast-only, zero storage).
+app.post("/api/sessions/:id/chat", async (req, res) => {
+  try {
+    const r = await checkChatSend(req.params.id, req.body.actor, req.body.pin, req.body.text);
+    if (!r.ok) {
+      const code = r.error === "bad-text" ? 400
+        : r.error === "too-fast" ? 429
+        : r.error === "bad-pin" ? 403
+        : (r.error === "unknown-session" ? 404 : 409);
+      return res.status(code).json({ ok: false, error: r.error });
+    }
+    emitChat(r.session.id, r.from, r.text);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
 });
 
 // ── Socket.IO ──────────────────────────────────────────────────────────────
@@ -785,6 +828,19 @@ io.on("connection", (socket) => {
       io.to("session:" + s.id).emit("session:update", s);
       emitPresenceCircle(c.name);
       ack && ack({ ok: true, session: s, todayCount: tc ? tc.today_count : 0 });
+    } catch (e) { ack && ack({ ok: false, error: "server" }); }
+  });
+
+  // Duel chat over socket (ephemeral — same validation as REST, zero storage).
+  // Client falls back to REST on ack failure.
+  socket.on("chat:send", async (msg = {}, ack) => {
+    try {
+      if (!msg || typeof msg !== "object") return ack && ack({ ok: false, error: "bad-text" });
+      const r = await checkChatSend(msg.sessionId, msg.actor, msg.pin, msg.text);
+      if (!r.ok) return ack && ack({ ok: false, error: r.error });
+      if (r.from !== who) return ack && ack({ ok: false, error: "forbidden" });
+      emitChat(r.session.id, r.from, r.text);
+      ack && ack({ ok: true });
     } catch (e) { ack && ack({ ok: false, error: "server" }); }
   });
 

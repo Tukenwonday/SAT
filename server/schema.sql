@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS friends (
 );
 CREATE INDEX IF NOT EXISTS friends_user_idx ON friends(user_name);
 
--- Presence / today's counter. Replaces Firestore status/{name}.
+-- Presence / today's counter (one row per player).
 CREATE TABLE IF NOT EXISTS status (
   name          TEXT PRIMARY KEY REFERENCES users(name) ON DELETE CASCADE,
   current_index INT NOT NULL DEFAULT 0,
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS status (
   today_count   INT NOT NULL DEFAULT 0
 );
 
--- Append-only answer ledger. Replaces Firestore attempts/{autoId}. Source of truth.
+-- Append-only answer ledger. Source of truth for progress and history.
 CREATE TABLE IF NOT EXISTS attempts (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_name   TEXT NOT NULL REFERENCES users(name) ON DELETE CASCADE,
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS attempts (
 CREATE INDEX IF NOT EXISTS attempts_user_q_idx ON attempts(user_name, question_id, answered_at DESC);
 CREATE INDEX IF NOT EXISTS attempts_answered_idx ON attempts(answered_at DESC);
 
--- Live 1v1 challenges. Replaces Firestore sessions/{id}.
+-- Live 1v1 challenges (duels). Chat is ephemeral (socket-only, never stored).
 -- current_answers: { "<name>": {user_name, questionIndex, selected, is_correct, timeMs} }
 CREATE TABLE IF NOT EXISTS sessions (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),

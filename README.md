@@ -1,25 +1,25 @@
 ﻿# My SAT practice
 Two-player study app. No login, no passwords — identity is just a typed name.
 Question bank + rendering live in `index.html` / `sat_db.json`; all progress,
-presence and challenges live on the remote sync layer (`net.js`).
+presence and challenges live on the VPS backend (`backend.js` + `server/`).
 
 ## Files
 - `index.html` — the whole app (exam UI + all overlays + sounds)
-- `net.js` — online layer: presence, attempts, history, 1v1 challenges
-- `sync-config.js` — ★ paste your remote sync project values here
-- `firestore.rules` equivalent → `server.rules` — minimal rules for a private group. Publish these.
+- `backend.js` — online layer: presence, attempts, history, 1v1 challenges, duel chat
+- `sync-config.js` — ★ paste your VPS backend URL here
 - `sat_db.json` + `fig/` — question bank + figure images. Deploy alongside.
+- `server/` — Node + Express + Postgres + Socket.IO backend (see `server/README-DEPLOY.md`)
+- `admin.html` — master admin dashboard (talks to the same backend API)
 
-Deploy all of these together (Firebase Hosting, Netlify, any static host).
+Deploy the static files together (Netlify, any static host).
 Open the app over `http(s)://` — not `file://` (browser modules won't load).
 
-## Remote sync setup (fresh project, ~5 minutes)
-1. Create a project at your cloud provider's console and add a web app.
-2. Provision a database — collections are created automatically on first write.
-3. Copy the web config (apiKey, authDomain, projectId, appId).
-4. Paste those four values into `sync-config.js`.
-5. Publish the contents of `server.rules` to your database rules tab.
-6. Done — no Auth, no Functions, no indexes needed.
+## Backend setup (VPS, ~15 minutes)
+1. Provision the VPS (Node 20+, Postgres, nginx) per `server/README-DEPLOY.md`.
+2. Point a hostname at it (a real domain, or free `sslip.io`) and issue a TLS
+   cert with certbot — browsers block HTTPS pages from calling plain-HTTP APIs.
+3. Set `window.SATBANK_BACKEND.url` in `sync-config.js` to the HTTPS origin.
+4. Done — no Auth needed.
 
 ## Daily use (2 players)
 1. Each player types their name bottom-left → Save. That's the whole login.
