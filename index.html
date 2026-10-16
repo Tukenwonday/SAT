@@ -650,7 +650,6 @@
   <h2 class="hist-title">History</h2>
   <div class="hist-rule"></div>
   <div id="hist-body"><div class="skel" style="height:120px"></div></div>
-  <div class="mrow hist-actions"><button id="histclose">Close</button></div>
 </div></div>
 
 <div class="overlay" id="ov-challenge"><div class="modal" style="max-width:560px">
@@ -1425,7 +1424,7 @@ function applyPrefs() {
 }
 function syncPrefUI() {} // kept: called by applyPrefs; nothing to sync (no controls).
 $('historybtn').addEventListener('click', () => { $('ov-history').classList.add('open'); if (window.Net) Net.renderHistory(); });
-$('histclose').addEventListener('click', () => $('ov-history').classList.remove('open'));
+// (No Close button: the popup closes via backdrop click or Esc — see global handlers.)
 $('challengebtn').addEventListener('click', () => {
   if (window.Net && Net.openChallenge) Net.openChallenge();
   else $('ov-challenge').classList.add('open');

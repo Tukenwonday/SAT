@@ -106,13 +106,6 @@
     padding: 34px 10px; text-align: center; font-size: 14px; font-weight: 600;
     color: var(--muted); line-height: 1.6;
   }
-  .mrow { display: flex; justify-content: flex-end; margin-top: 18px; }
-  #histclose {
-    background: transparent; border: none; color: var(--muted);
-    font-size: 15px; font-weight: 700; font-family: var(--sans);
-    padding: 12px 10px; cursor: pointer;
-  }
-  #histclose:hover { color: var(--ink); }
 </style>
 </head>
 <body>
@@ -120,7 +113,6 @@
 <div id="demo">
   <span>HISTORY P1 · MINIMAL PREMIUM</span>
   <button id="emptytoggle" type="button">simulate: empty</button>
-  <button id="reopen" type="button" style="display:none">reopen modal</button>
   <a href="./index.html">← all</a>
 </div>
 
@@ -128,7 +120,6 @@
   <h2>History</h2>
   <div class="hrule"></div>
   <div id="hist-body"></div>
-  <div class="mrow"><button id="histclose">Close</button></div>
 </div></div>
 
 <script>
@@ -194,17 +185,9 @@ function renderDuels(b) {
   });
   b.innerHTML = h;
 }
-document.getElementById('histclose').onclick = () => {
-  document.getElementById('ov-history').classList.remove('open');
-  document.getElementById('reopen').style.display = '';
-};
 document.getElementById('emptytoggle').onclick = e => {
   empty = !empty; render();
   e.currentTarget.textContent = empty ? 'simulate: has data' : 'simulate: empty';
-};
-document.getElementById('reopen').onclick = e => {
-  document.getElementById('ov-history').classList.add('open');
-  e.currentTarget.style.display = 'none';
 };
 render();
 </script>
