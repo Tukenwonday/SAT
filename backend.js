@@ -1584,8 +1584,6 @@ function ensureChatCss() {
     "border-radius:50%;background:#ff5d5d;border:2px solid #111;animation:chatdot-pulse 1.1s infinite}" +
     "#chatbtn.hasunread #chatdot{display:block}" +
     "@keyframes chatdot-pulse{0%,100%{transform:scale(1)}50%{transform:scale(.72)}}" +
-    // Duel chrome cleanup: the solo progress bar looks broken mid-duel.
-    "#banner.duel + #progbar{display:none}" +
     // Neo-brutalist panel: thick black borders + hard offset shadows, site palette kept.
     "#chatpanel{position:fixed;right:14px;bottom:86px;width:min(330px,calc(100vw - 28px));" +
     "max-height:min(420px,calc(100dvh - 220px));display:flex;flex-direction:column;z-index:340;" +

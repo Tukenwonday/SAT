@@ -86,8 +86,6 @@
   #markbtn:hover { text-decoration: underline; }
   #markbtn.marked { font-weight: 700; }
   #markbtn.marked svg path { fill: var(--blue); stroke: var(--blue); }
-  #abcbtn { margin-left: auto; background: none; border: none; cursor: pointer; padding: 2px; }
-  #abcbtn:hover { opacity: 0.75; }
   #qrule { border: none; border-top: 2px dashed #111; margin: 8px 0 14px; }
   #stem { font-family: var(--serif); font-size: calc(16.5px * var(--uiscale));
     line-height: 1.6; margin-bottom: 18px; }
@@ -343,13 +341,6 @@
   .pres-pill .count-tick.bump { transform: scale(1.25); }
   .pres-pill .ptoday-lbl { font-size: 10px; color: var(--muted); }
 
-  /* progress bar under banner */
-  #progbar { height: 4px; background: #e5e7f5; margin: 0 26px; border-radius: 0 0 8px 8px; overflow: hidden; }
-  html[data-theme="dark"] #progbar { background: #262a52; }
-  #progfill { height: 100%; width: 0%; border-radius: inherit;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
-    transition: width .5s var(--ease-premium); }
-
   /* name box (footer bottom-left) */
   #namebox { display: flex; gap: 6px; align-items: center; animation: slide-in-bl .5s var(--ease-premium); }
   @keyframes slide-in-bl { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -582,7 +573,6 @@
     </div>
     <button id="challexit" title="Exit Challenge">Exit ✕</button>
   </div>
-  <div id="progbar"><div id="progfill"></div></div>
   <div id="panes">
     <div id="left"><div id="passage"></div></div>
     <div id="divider"><div id="handle"><svg width="14" height="10" viewBox="0 0 14 10"><g stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5h11"/><path d="M4 2.5L1.5 5 4 7.5"/><path d="M10 2.5l2.5 2.5L10 7.5"/></g></svg></div></div>
@@ -592,9 +582,6 @@
         <button id="markbtn" title="Mark for review">
           <svg width="15" height="18" viewBox="0 0 15 18"><path d="M2 1h11v15l-5.5-4-5.5 4z" fill="none" stroke="#111" stroke-width="1.8"/></svg>
           <span>Mark for Review</span>
-        </button>
-        <button id="abcbtn" title="Clear eliminated choices">
-          <svg width="26" height="22" viewBox="0 0 26 22"><rect x="1" y="1" width="24" height="20" rx="3" fill="#2e5be6"/><text x="6" y="12" font-size="7" fill="#fff" font-family="sans-serif">ABC</text><path d="M6 15l4 4 8-9" stroke="#fff" stroke-width="1.8" fill="none"/></svg>
         </button>
       </div>
       <hr id="qrule">
@@ -911,7 +898,12 @@ function renderQ() {
   const sUR = clipRanges(ranges, bound, plainQ.length).map(([s, e2]) => [s - bound, e2 - bound]);
   S.currentIndex = idx;
   const pos = fPos(), total = F.length;
-  $('qbadge').textContent = pos + 1;
+  const qbn = String(pos + 1), qb = $('qbadge');
+  qb.textContent = qbn;
+  // Long numbers shrink + widen to fit; 1–2 digits render exactly as before.
+  qb.style.fontSize = qbn.length >= 4 ? "11px" : qbn.length >= 3 ? "13px" : "";
+  qb.style.width = qbn.length >= 3 ? "auto" : "";
+  qb.style.padding = qbn.length >= 3 ? "0 7px" : "";
   $('difftag').textContent = e.difficulty || '';
   $('markbtn').classList.toggle('marked', S.marked.includes(e.id));
   const all = S.hl[e.id] || [];
@@ -949,11 +941,6 @@ function renderQ() {
   $('backbtn').disabled = pos === 0;
   $('nextbtn').disabled = pos === total - 1;
   $('left').scrollTop = 0; $('right').scrollTop = 0;
-  // Smooth progress-bar fill (answered / total in current filter).
-  try {
-    const answered = F.filter(i => S.answers[DB[i].id]).length;
-    $('progfill').style.width = (total ? (answered / total * 100) : 0) + '%';
-  } catch (e) {}
   // Duel decor: lock options, neutral pick / simultaneous reveal, nav lock.
   if (window.Net && Net.decorate) Net.decorate();
   save();
@@ -1035,7 +1022,6 @@ $('markbtn').addEventListener('click', () => {
   if (at >= 0) S.marked.splice(at, 1); else S.marked.push(id);
   save(); renderQ();
 });
-$('abcbtn').addEventListener('click', () => { delete S.elim[cur().id]; save(); renderQ(); });
 $('right').addEventListener('click', ev => {
   if (ev.target.id === 'expbtn') {
     const open = $('exptext').classList.toggle('show');
