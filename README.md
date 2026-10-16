@@ -11,7 +11,7 @@ presence and challenges live on the VPS backend (`backend.js` + `server/`).
 - `server/` — Node + Express + Postgres + Socket.IO backend (see `server/README-DEPLOY.md`)
 - `admin.html` — master admin dashboard (talks to the same backend API)
 
-Deploy the static files together (Netlify, any static host).
+Deploy the static files together (Cloudflare Pages, any static host).
 Open the app over `http(s)://` — not `file://` (browser modules won't load).
 
 ## Backend setup (VPS, ~15 minutes)

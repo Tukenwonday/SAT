@@ -1,0 +1,10 @@
+# Cloudflare Pages routing (this file must stay in the publish directory = repo root).
+# /api/* proxies to the VPS: the admin dashboard calls same-origin /api/...,
+# so without this rewrite it breaks while the app keeps working. (Socket.IO
+# needs no rule — the app connects wss:// to the VPS directly.)
+# /server/*, /tools/* and *.py are backend/dev files: never serve them.
+/admin /admin.html 200
+/api/* https://51-84-109-28.sslip.io/api/:splat 200
+/server/* /404.html 404
+/tools/* /404.html 404
+/*.py /404.html 404
