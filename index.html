@@ -140,9 +140,12 @@
   .btn-ghost:disabled { opacity: 0.4; cursor: default; }
   #mm-shuffle.on { font-weight: 700; color: var(--blue); }
 
-  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
-    z-index: 100; align-items: center; justify-content: center; }
-  .overlay.open { display: flex; }
+  /* Backdrop fades in AND out (display can't transition, visibility can).
+     Cards get their own spring entrance below; on close everything melts away. */
+  .overlay { display: flex; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    z-index: 100; align-items: center; justify-content: center;
+    opacity: 0; visibility: hidden; transition: opacity .32s ease, visibility 0s .32s; }
+  .overlay.open { opacity: 1; visibility: visible; transition: opacity .32s ease; }
   .modal { background: #fff; border-radius: 12px; padding: 28px 32px; max-width: 640px;
     width: 92%; max-height: 86%; overflow-y: auto; }
   .modal h2 { font-size: 20px; margin-bottom: 12px; }
@@ -164,20 +167,39 @@
   .sr-row .tag { margin-left: auto; font-size: 12px; color: var(--muted);
     white-space: nowrap; padding-left: 10px; }
   .modal .mrow { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
-  #navgrid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 8px; margin: 14px 0;
-    max-height: 50vh; overflow-y: auto; }
-  #navgrid button { aspect-ratio: 1; border: 1.5px solid #333; background: #fff;
-    border-radius: 6px; font-size: 12px; cursor: pointer; position: relative; font-family: var(--sans); }
-  #navgrid button:hover { background: #f0f2f7; }
-  #navgrid button.cur { outline: 3px solid #111; }
-  #navgrid button.ans { background: var(--blue); color: #fff; border-color: var(--blue); }
-  #navgrid button.right { background: #1a7f37; color: #fff; border-color: #1a7f37; }
-  #navgrid button.wrong { background: #c0392b; color: #fff; border-color: #c0392b; }
-  #navgrid button .bm { position: absolute; top: -7px; right: 2px; font-size: 12px; color: var(--blue); }
+  /* ── Navigator (minimal premium) ── */
+  #ov-nav .modal { border-radius: 28px; padding: 34px 34px 26px;
+    box-shadow: 0 30px 80px rgba(16,18,35,.16), 0 2px 6px rgba(16,18,35,.06); }
+  .overlay.open #ov-nav .modal { animation: navin .45s var(--ease-pop); }
+  @keyframes navin { 0% { transform: translateY(30px) scale(.96); opacity: 0; }
+    60% { transform: translateY(-4px) scale(1.004); opacity: 1; }
+    100% { transform: none; opacity: 1; } }
+  .navcount { text-align: center; font-size: 14px; font-weight: 800; color: var(--ink);
+    margin: 2px 0 0; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  .navcount { text-align: center; font-size: 13px; font-weight: 700; color: var(--muted);
+    margin: 8px 0 0; font-variant-numeric: tabular-nums; }
+  #navgrid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 8px; margin: 16px 0 4px;
+    max-height: 50vh; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+  #navgrid::-webkit-scrollbar { display: none; }
+  #navgrid button { aspect-ratio: 1; border: 1.5px solid #e7e9f2; background: #fff;
+    border-radius: 14px; font-size: 14px; font-weight: 700; color: #3a3f52; cursor: pointer;
+    position: relative; font-family: var(--sans);
+    transition: transform .15s, box-shadow .15s, background .15s;
+    animation: navpop .32s var(--ease-pop) backwards; }
+  @keyframes navpop { 0% { transform: scale(.7); opacity: 0; }
+    100% { transform: none; opacity: 1; } }
+  #navgrid button:hover { background: #f4f6fb; transform: translateY(-1px); }
+  #navgrid button.cur { outline: 2.5px solid #111; outline-offset: 2px; }
+  #navgrid button.ans { background: var(--blue); color: #fff; border-color: transparent; }
+  #navgrid button.right { background: #1da664; color: #fff; border-color: transparent;
+    box-shadow: 0 4px 12px rgba(29,166,100,.35); }
+  #navgrid button.wrong { background: #d64545; color: #fff; border-color: transparent;
+    box-shadow: 0 4px 12px rgba(214,69,69,.35); }
+  #navgrid button .bm { position: absolute; top: -6px; right: 4px; font-size: 12px; color: var(--blue); }
   #navgrid button.ans .bm, #navgrid button.right .bm, #navgrid button.wrong .bm { color: #ffd23f; }
-  .navlegend { display: flex; gap: 18px; font-size: 13px; color: var(--muted); margin: 2px 0 4px; }
-  .navlegend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
-  .sw-right { background: #1a7f37; } .sw-wrong { background: #c0392b; } .sw-todo { background: #fff; border: 1.5px solid #333; }
+  #navclose { background: transparent; border: none; color: var(--muted);
+    font-size: 15px; font-weight: 700; font-family: var(--sans); padding: 12px 10px; cursor: pointer; }
+  #navclose:hover { color: var(--ink); }
   #moreMenu { position: fixed; top: 64px; right: 14px; background: #fff; z-index: 200;
     border: 1.5px solid #333; border-radius: 8px; display: none; min-width: 190px;
     box-shadow: 0 4px 18px rgba(0,0,0,0.2); }
@@ -271,6 +293,7 @@
   /* ── Name-based online layer: theme, presence, toasts, challenge ── */
   :root {
     --ease-premium: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-pop: cubic-bezier(.2, 1.18, .32, 1); /* gentle overshoot spring for popups */
     --accent: #6366f1;
     --accent2: #8b5cf6;
     --bg: #fff; --panel: #fff; --ink2: #111418;
@@ -425,8 +448,9 @@
     max-height: calc(100dvh - 60px); overflow-y: auto;
     scrollbar-width: none; -ms-overflow-style: none; }
   #ov-history .modal::-webkit-scrollbar { display: none; }
-  .overlay.open #ov-history .modal { animation: histin .4s cubic-bezier(.2,.9,.3,1); }
-  @keyframes histin { 0% { transform: translateY(24px) scale(.98); opacity: 0; }
+  .overlay.open #ov-history .modal { animation: histin .45s var(--ease-pop); }
+  @keyframes histin { 0% { transform: translateY(30px) scale(.96); opacity: 0; }
+    60% { transform: translateY(-4px) scale(1.004); opacity: 1; }
     100% { transform: none; opacity: 1; } }
   .hist-title { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -1px; text-align: center; }
   .hist-rule { width: 44px; height: 3px; background: #111; border-radius: 2px; margin: 14px auto 0; }
@@ -450,8 +474,9 @@
   /* ── Challenge modal (minimal premium) ── */
   #ov-challenge .modal { border-radius: 28px; padding: 36px 36px 30px;
     box-shadow: 0 30px 80px rgba(16,18,35,.16), 0 2px 6px rgba(16,18,35,.06); }
-  .overlay.open #ov-challenge .modal { animation: challin .4s cubic-bezier(.2,.9,.3,1); }
-  @keyframes challin { 0% { transform: translateY(24px) scale(.98); opacity: 0; }
+  .overlay.open #ov-challenge .modal { animation: challin .45s var(--ease-pop); }
+  @keyframes challin { 0% { transform: translateY(30px) scale(.96); opacity: 0; }
+    60% { transform: translateY(-4px) scale(1.004); opacity: 1; }
     100% { transform: none; opacity: 1; } }
   .chall-kicker { font-size: 12px; font-weight: 800; letter-spacing: 3.5px;
     text-transform: uppercase; color: #4f46e5; text-align: center; margin-bottom: 8px; }
@@ -617,10 +642,9 @@
 </div></div>
 
 <div class="overlay" id="ov-nav"><div class="modal" style="max-width:720px">
-  <h2>Section 1, Module 1: Reading and Writing</h2>
-  <div class="navlegend"><span><span class="sw sw-right"></span>Correct</span><span><span class="sw sw-wrong"></span>Wrong</span><span><span class="sw sw-todo"></span>Unanswered</span></div>
+  <div class="navcount" id="navcount"></div>
   <div id="navgrid"></div>
-  <div class="mrow"><button class="btn-ghost" id="navclose">Close</button></div>
+  <div class="mrow"><button id="navclose">Close</button></div>
 </div></div>
 
 <div class="overlay" id="ov-filter"><div class="modal">
@@ -1042,8 +1066,11 @@ function openNav() {
         const a = S.answers[id];
         if (a) c.push(a === e.correct ? 'right' : 'wrong');
         const bm = S.marked.includes(id) ? '<span class="bm">&#128278;</span>' : '';
-        html += `<button class="${c.join(' ')}" data-i="${i}">⚔️${p + 1}${bm}</button>`;
+        html += `<button class="${c.join(' ')}" data-i="${i}" style="animation-delay:${Math.min(p * 12, 240)}ms">⚔️${p + 1}${bm}</button>`;
       }
+      const played = r.idxs.slice(0, r.cur + 1);
+      const nAns = played.filter(i => S.answers[DB[i].id]).length;
+      const nc0 = $('navcount'); if (nc0) nc0.textContent = nAns + " of " + played.length + " answered";
       $('navgrid').innerHTML = html;
       $('ov-nav').classList.add('open');
       const curBtn = $('navgrid').querySelector('.cur');
@@ -1058,8 +1085,10 @@ function openNav() {
     const a = S.answers[id];
     if (a) c.push(a === e.correct ? 'right' : 'wrong');
     const bm = S.marked.includes(id) ? '<span class="bm">&#128278;</span>' : '';
-    html += `<button class="${c.join(' ')}" data-i="${i}">${p + 1}${bm}</button>`;
+    html += `<button class="${c.join(' ')}" data-i="${i}" style="animation-delay:${Math.min(p * 12, 240)}ms">${p + 1}${bm}</button>`;
   }
+  const nAns = F.filter(i => S.answers[DB[i].id]).length;
+  const nc = $('navcount'); if (nc) nc.textContent = nAns + " of " + F.length + " answered";
   $('navgrid').innerHTML = html;
   $('ov-nav').classList.add('open');
   const curBtn = $('navgrid').querySelector('.cur');
