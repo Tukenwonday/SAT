@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="sync-config.js"></script>
   <style>
     :root {
       --font: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
@@ -1162,6 +1163,14 @@
     }
 
     // ── Authenticated API Client ─────────────────────────────────────────────
+    function getApiBase() {
+      if (typeof window !== "undefined" && window.SATBANK_BACKEND && window.SATBANK_BACKEND.url) {
+        return window.SATBANK_BACKEND.url.replace(/\/+$/, "");
+      }
+      return "https://51-84-109-28.sslip.io";
+    }
+    const API_BASE = getApiBase();
+
     async function request(endpoint, options = {}) {
       options.headers = options.headers || {};
       options.headers["x-admin-key"] = authToken;
@@ -1170,7 +1179,8 @@
         options.body = JSON.stringify(options.body);
       }
       try {
-        const res = await fetch(endpoint, options);
+        const url = endpoint.startsWith("http") ? endpoint : API_BASE + endpoint;
+        const res = await fetch(url, options);
         if (res.status === 401) {
           openAuthGate();
           return null;
@@ -1192,7 +1202,7 @@
       const errEl = document.getElementById("auth-err");
       errEl.style.display = "none";
       try {
-        const res = await fetch("/api/admin/auth", {
+        const res = await fetch(API_BASE + "/api/admin/auth", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ password })
