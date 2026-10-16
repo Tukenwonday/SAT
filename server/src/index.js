@@ -2,6 +2,8 @@
 // Identity = typed name + PIN (plain text, collision protection only — NOT real security).
 // See schema.sql, README-DEPLOY.md. Frontend client: ../backend.js
 require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
@@ -812,6 +814,411 @@ setInterval(async () => { // refresh online/offline edges even when nobody acts
     for (const r of rows) emitPresenceCircle(r.name);
   } catch (e) { /* idle */ }
 }, ONLINE_WINDOW_MS);
+
+// ── Admin APIs ──────────────────────────────────────────────────────────────
+const ADMIN_PASSWORD = () => process.env.ADMIN_PASSWORD || "admin123";
+
+function requireAdmin(req, res, next) {
+  const key = req.headers["x-admin-key"] || req.query.admin_key || req.headers["authorization"]?.replace(/^Bearer\s+/i, "");
+  if (!key || key !== ADMIN_PASSWORD()) {
+    return res.status(401).json({ ok: false, error: "unauthorized" });
+  }
+  next();
+}
+
+app.post("/api/admin/auth", (req, res) => {
+  const pwd = String(req.body.password || "").trim();
+  if (pwd && pwd === ADMIN_PASSWORD()) {
+    return res.json({ ok: true });
+  }
+  return res.status(401).json({ ok: false, error: "invalid-password" });
+});
+
+app.get("/api/admin/stats", requireAdmin, async (req, res) => {
+  try {
+    const now = Date.now();
+    const [uCount, onlineCount, attStats, todayAtt, sessStats, hardest] = await Promise.all([
+      pool.query("SELECT COUNT(*)::int AS count FROM users"),
+      pool.query("SELECT COUNT(*)::int AS count FROM status WHERE last_seen > 0 AND ($1 - last_seen) < $2", [now, ONLINE_WINDOW_MS]),
+      pool.query("SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_correct)::int AS correct FROM attempts"),
+      pool.query("SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_correct)::int AS correct FROM attempts WHERE answered_at >= CURRENT_DATE"),
+      pool.query("SELECT status, COUNT(*)::int AS count FROM sessions GROUP BY status"),
+      pool.query(`
+        SELECT question_id, COUNT(*)::int AS total, 
+               COUNT(*) FILTER (WHERE NOT is_correct)::int AS wrong,
+               ROUND(100.0 * COUNT(*) FILTER (WHERE is_correct) / COUNT(*), 1)::float AS accuracy
+        FROM attempts
+        GROUP BY question_id
+        HAVING COUNT(*) >= 1
+        ORDER BY wrong DESC, total DESC
+        LIMIT 10
+      `),
+    ]);
+
+    const sessionCounts = {};
+    (sessStats.rows || []).forEach(r => { sessionCounts[r.status] = r.count; });
+
+    res.json({
+      ok: true,
+      stats: {
+        totalUsers: uCount.rows[0].count,
+        onlineUsers: onlineCount.rows[0].count,
+        totalAttempts: attStats.rows[0].total,
+        correctAttempts: attStats.rows[0].correct,
+        accuracy: attStats.rows[0].total ? Math.round((attStats.rows[0].correct / attStats.rows[0].total) * 100) : 0,
+        todayAttempts: todayAtt.rows[0].total,
+        todayCorrect: todayAtt.rows[0].correct,
+        todayAccuracy: todayAtt.rows[0].total ? Math.round((todayAtt.rows[0].correct / todayAtt.rows[0].total) * 100) : 0,
+        sessions: sessionCounts,
+        hardestQuestions: hardest.rows,
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get("/api/admin/users", requireAdmin, async (req, res) => {
+  try {
+    const now = Date.now();
+    const q = `
+      SELECT u.name, u.pin, u.created_at,
+             COALESCE(s.current_index, 0) AS current_index,
+             COALESCE(s.last_seen, 0) AS last_seen,
+             COALESCE(s.today_count, 0) AS today_count,
+             (COALESCE(s.last_seen, 0) > 0 AND ($1 - COALESCE(s.last_seen, 0)) < $2) AS is_online,
+             COUNT(a.id)::int AS total_attempts,
+             COUNT(a.id) FILTER (WHERE a.is_correct)::int AS correct_attempts
+      FROM users u
+      LEFT JOIN status s ON s.name = u.name
+      LEFT JOIN attempts a ON a.user_name = u.name
+      GROUP BY u.name, u.pin, u.created_at, s.current_index, s.last_seen, s.today_count
+      ORDER BY is_online DESC, u.created_at DESC
+    `;
+    const r = await pool.query(q, [now, ONLINE_WINDOW_MS]);
+    res.json({ ok: true, users: r.rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post("/api/admin/users", requireAdmin, async (req, res) => {
+  try {
+    const name = cleanName(req.body.name);
+    const pin = String(req.body.pin || "").trim() || newPin();
+    if (!name) return res.status(400).json({ ok: false, error: "bad-name" });
+    await pool.query("INSERT INTO users(name, pin) VALUES($1, $2)", [name, pin]);
+    await pool.query("INSERT INTO status(name, current_index, last_seen, day_key, today_count) VALUES($1, 0, 0, '', 0) ON CONFLICT DO NOTHING", [name]);
+    res.json({ ok: true, user: { name, pin } });
+  } catch (e) {
+    if (e.code === "23505") return res.status(409).json({ ok: false, error: "user-exists" });
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.patch("/api/admin/users/:name/pin", requireAdmin, async (req, res) => {
+  try {
+    const name = cleanName(req.params.name);
+    const pin = String(req.body.pin || "").trim();
+    if (!pin) return res.status(400).json({ ok: false, error: "bad-pin" });
+    const r = await pool.query("UPDATE users SET pin=$1 WHERE name=$2 RETURNING name, pin", [pin, name]);
+    if (!r.rowCount) return res.status(404).json({ ok: false, error: "not-found" });
+    res.json({ ok: true, user: r.rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.delete("/api/admin/users/:name", requireAdmin, async (req, res) => {
+  try {
+    const name = cleanName(req.params.name);
+    const r = await pool.query("DELETE FROM users WHERE name=$1 RETURNING name", [name]);
+    if (!r.rowCount) return res.status(404).json({ ok: false, error: "not-found" });
+    emitPresenceCircle(name);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get("/api/admin/sessions", requireAdmin, async (req, res) => {
+  try {
+    const status = req.query.status;
+    let q = "SELECT * FROM sessions";
+    const args = [];
+    if (status && status !== "all") {
+      args.push(status);
+      q += " WHERE status = $1";
+    }
+    q += " ORDER BY created_at DESC LIMIT 50";
+    const r = await pool.query(q, args);
+    res.json({ ok: true, sessions: r.rows.map(sessionOut) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post("/api/admin/sessions/:id/terminate", requireAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const r = await pool.query(
+      "UPDATE sessions SET status='forfeited', finished_at=now(), forfeited_by='admin' WHERE id=$1 RETURNING *",
+      [id]
+    );
+    if (!r.rowCount) return res.status(404).json({ ok: false, error: "not-found" });
+    const s = sessionOut(r.rows[0]);
+    io.to("session:" + id).emit("session:update", s);
+    res.json({ ok: true, session: s });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.delete("/api/admin/sessions/:id", requireAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const r = await pool.query("DELETE FROM sessions WHERE id=$1 RETURNING id", [id]);
+    if (!r.rowCount) return res.status(404).json({ ok: false, error: "not-found" });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Database direct inspection & editing
+const ALLOWED_TABLES = ["users", "status", "attempts", "sessions", "friends"];
+
+app.get("/api/admin/db/tables", requireAdmin, async (req, res) => {
+  try {
+    const tablesInfo = [];
+    for (const t of ALLOWED_TABLES) {
+      const countR = await pool.query(`SELECT COUNT(*)::int AS count FROM "${t}"`);
+      const colsR = await pool.query(
+        `SELECT column_name, data_type, is_nullable, column_default 
+         FROM information_schema.columns 
+         WHERE table_schema = 'public' AND table_name = $1 
+         ORDER BY ordinal_position`, [t]
+      );
+      tablesInfo.push({
+        name: t,
+        count: countR.rows[0].count,
+        columns: colsR.rows
+      });
+    }
+    res.json({ ok: true, tables: tablesInfo });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get("/api/admin/db/:table", requireAdmin, async (req, res) => {
+  try {
+    const table = req.params.table;
+    if (!ALLOWED_TABLES.includes(table)) return res.status(400).json({ ok: false, error: "forbidden-table" });
+
+    const limit = Math.min(100, Math.max(1, +(req.query.limit || 25)));
+    const offset = Math.max(0, +(req.query.offset || 0));
+    const search = String(req.query.search || "").trim();
+
+    const colsR = await pool.query(
+      `SELECT column_name, data_type, is_nullable 
+       FROM information_schema.columns 
+       WHERE table_schema = 'public' AND table_name = $1 
+       ORDER BY ordinal_position`, [table]
+    );
+    const columns = colsR.rows;
+
+    let queryStr = `SELECT * FROM "${table}"`;
+    let countStr = `SELECT COUNT(*)::int AS total FROM "${table}"`;
+    const params = [];
+
+    if (search) {
+      const textCols = columns
+        .filter(c => ["text", "character varying", "uuid", "character"].includes(c.data_type))
+        .map(c => `"${c.column_name}"::text ILIKE $1`);
+      if (textCols.length) {
+        const where = " WHERE " + textCols.join(" OR ");
+        queryStr += where;
+        countStr += where;
+        params.push(`%${search}%`);
+      }
+    }
+
+    const countRes = await pool.query(countStr, params);
+    const total = countRes.rows[0].total;
+
+    queryStr += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(limit, offset);
+
+    const rowsRes = await pool.query(queryStr, params);
+
+    res.json({ ok: true, table, total, limit, offset, columns, rows: rowsRes.rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post("/api/admin/db/:table/row", requireAdmin, async (req, res) => {
+  try {
+    const table = req.params.table;
+    if (!ALLOWED_TABLES.includes(table)) return res.status(400).json({ ok: false, error: "forbidden-table" });
+    const data = req.body.data;
+    if (!data || typeof data !== "object") return res.status(400).json({ ok: false, error: "bad-data" });
+
+    const keys = Object.keys(data).filter(k => /^[a-zA-Z0-9_]+$/.test(k));
+    if (!keys.length) return res.status(400).json({ ok: false, error: "no-fields" });
+
+    const cols = keys.map(k => `"${k}"`).join(", ");
+    const vals = keys.map((_, i) => `$${i + 1}`).join(", ");
+    const args = keys.map(k => data[k]);
+
+    const r = await pool.query(`INSERT INTO "${table}" (${cols}) VALUES (${vals}) RETURNING *`, args);
+    res.json({ ok: true, row: r.rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.patch("/api/admin/db/:table/row", requireAdmin, async (req, res) => {
+  try {
+    const table = req.params.table;
+    if (!ALLOWED_TABLES.includes(table)) return res.status(400).json({ ok: false, error: "forbidden-table" });
+    const { pk, data } = req.body;
+    if (!pk || typeof pk !== "object" || !data || typeof data !== "object") {
+      return res.status(400).json({ ok: false, error: "bad-payload" });
+    }
+
+    const updateKeys = Object.keys(data).filter(k => /^[a-zA-Z0-9_]+$/.test(k));
+    const pkKeys = Object.keys(pk).filter(k => /^[a-zA-Z0-9_]+$/.test(k));
+    if (!updateKeys.length || !pkKeys.length) return res.status(400).json({ ok: false, error: "no-keys" });
+
+    const setClauses = [];
+    const args = [];
+    updateKeys.forEach((k) => {
+      args.push(data[k]);
+      setClauses.push(`"${k}" = $${args.length}`);
+    });
+
+    const whereClauses = [];
+    pkKeys.forEach((k) => {
+      args.push(pk[k]);
+      whereClauses.push(`"${k}" = $${args.length}`);
+    });
+
+    const q = `UPDATE "${table}" SET ${setClauses.join(", ")} WHERE ${whereClauses.join(" AND ")} RETURNING *`;
+    const r = await pool.query(q, args);
+    if (!r.rowCount) return res.status(404).json({ ok: false, error: "row-not-found" });
+    res.json({ ok: true, row: r.rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.delete("/api/admin/db/:table/row", requireAdmin, async (req, res) => {
+  try {
+    const table = req.params.table;
+    if (!ALLOWED_TABLES.includes(table)) return res.status(400).json({ ok: false, error: "forbidden-table" });
+    const pk = req.body.pk;
+    if (!pk || typeof pk !== "object") return res.status(400).json({ ok: false, error: "bad-pk" });
+
+    const pkKeys = Object.keys(pk).filter(k => /^[a-zA-Z0-9_]+$/.test(k));
+    if (!pkKeys.length) return res.status(400).json({ ok: false, error: "no-pk-keys" });
+
+    const args = [];
+    const whereClauses = pkKeys.map(k => {
+      args.push(pk[k]);
+      return `"${k}" = $${args.length}`;
+    });
+
+    const q = `DELETE FROM "${table}" WHERE ${whereClauses.join(" AND ")} RETURNING *`;
+    const r = await pool.query(q, args);
+    if (!r.rowCount) return res.status(404).json({ ok: false, error: "row-not-found" });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+function getSatDbPath() {
+  const candidates = [
+    path.resolve(__dirname, "../../sat_db.json"),
+    path.resolve(__dirname, "../sat_db.json"),
+    path.resolve(__dirname, "sat_db.json"),
+    path.resolve(process.cwd(), "sat_db.json"),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+app.get("/api/admin/questions", requireAdmin, async (req, res) => {
+  try {
+    const dbPath = getSatDbPath();
+    if (!dbPath) return res.status(404).json({ ok: false, error: "sat_db.json not found on server" });
+    const raw = fs.readFileSync(dbPath, "utf8");
+    const all = JSON.parse(raw);
+
+    const q = String(req.query.q || "").toLowerCase().trim();
+    const domain = String(req.query.domain || "").trim();
+    const difficulty = String(req.query.difficulty || "").trim();
+    const page = Math.max(1, +(req.query.page || 1));
+    const limit = Math.min(100, Math.max(1, +(req.query.limit || 20)));
+
+    let filtered = all;
+    if (q) {
+      filtered = filtered.filter(item => 
+        (item.id && item.id.toLowerCase().includes(q)) ||
+        (item.question && item.question.toLowerCase().includes(q)) ||
+        (item.skill && item.skill.toLowerCase().includes(q)) ||
+        (item.rationale && item.rationale.toLowerCase().includes(q))
+      );
+    }
+    if (domain && domain !== "all") {
+      filtered = filtered.filter(item => item.domain === domain);
+    }
+    if (difficulty && difficulty !== "all") {
+      filtered = filtered.filter(item => item.difficulty === difficulty);
+    }
+
+    const total = filtered.length;
+    const startIndex = (page - 1) * limit;
+    const slice = filtered.slice(startIndex, startIndex + limit);
+
+    res.json({
+      ok: true,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      questions: slice,
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.patch("/api/admin/questions/:id", requireAdmin, async (req, res) => {
+  try {
+    const dbPath = getSatDbPath();
+    if (!dbPath) return res.status(404).json({ ok: false, error: "sat_db.json not found" });
+    const id = req.params.id;
+    const raw = fs.readFileSync(dbPath, "utf8");
+    const all = JSON.parse(raw);
+
+    const idx = all.findIndex(item => item && item.id === id);
+    if (idx === -1) return res.status(404).json({ ok: false, error: "question-not-found" });
+
+    const updated = { ...all[idx], ...req.body };
+    updated.id = id;
+    all[idx] = updated;
+
+    fs.writeFileSync(dbPath, JSON.stringify(all, null, 1), "utf8");
+    res.json({ ok: true, question: updated });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
 // Generic responses last: no framework fingerprint pages, no stack/SQL leaks.
 app.use((req, res) => res.status(404).json({ ok: false, error: "unknown" }));

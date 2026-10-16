@@ -1,0 +1,1608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SAT Master Admin Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: rgba(17, 24, 39, 0.75);
+      --card-hover: rgba(24, 33, 53, 0.9);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --card-border-glow: rgba(99, 102, 241, 0.35);
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --accent: #38bdf8;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.25);
+      --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.45);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(at 10% 15%, rgba(99, 102, 241, 0.12) 0px, transparent 40%),
+        radial-gradient(at 90% 85%, rgba(56, 189, 248, 0.08) 0px, transparent 40%),
+        radial-gradient(at 50% 50%, rgba(15, 23, 42, 0.8) 0px, transparent 100%);
+      background-attachment: fixed;
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Top Navigation Bar */
+    header {
+      background: rgba(11, 15, 25, 0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--card-border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 0 28px;
+      height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-weight: 800;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-badge {
+      background: linear-gradient(135deg, #6366f1, #38bdf8);
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .nav-tabs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 4px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--card-border);
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 0.88rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .tab-btn.active {
+      color: #fff;
+      background: var(--primary);
+      box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.18s ease;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.07);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .btn-danger:hover {
+      background: var(--danger);
+      color: white;
+    }
+
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 0.8rem;
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      padding: 32px;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .tab-pane {
+      display: none;
+      animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .tab-pane.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Cards & Stats */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 18px;
+      margin-bottom: 28px;
+    }
+
+    .stat-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 22px;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card:hover {
+      border-color: var(--card-border-glow);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .stat-label {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .stat-value {
+      font-size: 2.1rem;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.02em;
+    }
+
+    .stat-sub {
+      margin-top: 6px;
+      font-size: 0.82rem;
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Tables */
+    .table-responsive {
+      overflow-x: auto;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--card-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.88rem;
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 13px 16px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.06em;
+      border-bottom: 1px solid var(--card-border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .badge-success { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-warning { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-danger  { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .badge-primary { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
+    .badge-secondary { background: rgba(156, 163, 175, 0.15); color: #9ca3af; border: 1px solid rgba(156, 163, 175, 0.25); }
+
+    /* Inputs & Forms */
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .form-input, .form-select, .form-textarea {
+      width: 100%;
+      background: rgba(11, 15, 25, 0.85);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      color: white;
+      font-family: inherit;
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+      outline: none;
+    }
+
+    .form-textarea {
+      min-height: 90px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+    }
+
+    .search-box {
+      position: relative;
+      min-width: 260px;
+    }
+
+    .search-box input {
+      padding-left: 36px;
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .modal {
+      background: #111827;
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 600px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-body {
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    .modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.015);
+    }
+
+    /* Mono Code */
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.84rem;
+    }
+
+    /* Sub-nav for DB tables */
+    .subnav {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .subnav-btn {
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 0.82rem;
+      font-weight: 600;
+      border: 1px solid var(--card-border);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .subnav-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: white;
+    }
+
+    .subnav-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: white;
+    }
+
+    /* Toast */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .toast {
+      background: #1e293b;
+      color: white;
+      padding: 12px 18px;
+      border-radius: var(--radius-sm);
+      font-size: 0.88rem;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      border-left: 4px solid var(--primary);
+      animation: slideIn 0.25s ease;
+    }
+
+    .toast-success { border-left-color: var(--success); }
+    .toast-error { border-left-color: var(--danger); }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* Question preview card */
+    .q-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .q-meta {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <span>⚡ SAT Platform</span>
+      <span class="brand-badge">Admin</span>
+    </div>
+
+    <nav class="nav-tabs" id="main-nav">
+      <button class="tab-btn active" data-tab="tab-overview">📊 Overview</button>
+      <button class="tab-btn" data-tab="tab-users">👥 Users & PINs</button>
+      <button class="tab-btn" data-tab="tab-duels">⚔️ Live Duels</button>
+      <button class="tab-btn" data-tab="tab-db">🗄️ Database Tables</button>
+      <button class="tab-btn" data-tab="tab-questions">📚 Question Bank</button>
+    </nav>
+
+    <div class="header-actions">
+      <button class="btn btn-secondary btn-sm" id="btn-refresh" title="Refresh Current Tab">🔄 Refresh</button>
+      <button class="btn btn-danger btn-sm" id="btn-logout">🔒 Lock / Logout</button>
+      <a href="/" class="btn btn-secondary btn-sm" target="_blank">Student View ↗</a>
+    </div>
+  </header>
+
+  <!-- Main Body -->
+  <main>
+    <!-- TAB 1: OVERVIEW -->
+    <section id="tab-overview" class="tab-pane active">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Users</div>
+          <div class="stat-value" id="stat-total-users">-</div>
+          <div class="stat-sub"><span id="stat-online-users">0</span> online now 🟢</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Attempts</div>
+          <div class="stat-value" id="stat-total-attempts">-</div>
+          <div class="stat-sub" id="stat-accuracy">0% Accuracy</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Today's Solved</div>
+          <div class="stat-value" id="stat-today-attempts">-</div>
+          <div class="stat-sub" id="stat-today-accuracy">0% Today Accuracy</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">1v1 Duels</div>
+          <div class="stat-value" id="stat-total-sessions">-</div>
+          <div class="stat-sub"><span id="stat-active-sessions">0</span> live active battles ⚔️</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🔥 Hardest Questions (Highest Error Rate)</div>
+          <span style="font-size: 0.85rem; color: var(--text-muted);">Identified from student answer attempts</span>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Question ID</th>
+                <th>Total Attempts</th>
+                <th>Wrong Attempts</th>
+                <th>Accuracy</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="hardest-questions-body">
+              <tr><td colspan="5" style="text-align: center; color: var(--text-dim);">Loading hardest questions…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: USERS & PINS -->
+    <section id="tab-users" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">👥 User Management & PINs</div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <div class="search-box">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="user-search" class="form-input" placeholder="Search user name…">
+            </div>
+            <button class="btn btn-primary" id="btn-create-user">+ Create User</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Player Name</th>
+                <th>PIN Code</th>
+                <th>Status</th>
+                <th>Questions Solved Today</th>
+                <th>Total Attempts</th>
+                <th>Accuracy</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-table-body">
+              <tr><td colspan="8" style="text-align: center; color: var(--text-dim);">Loading users…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: LIVE DUELS -->
+    <section id="tab-duels" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">⚔️ 1v1 Live Challenges & Session History</div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <select id="duel-status-filter" class="form-select" style="width: 160px;">
+              <option value="all">All Statuses</option>
+              <option value="active" selected>Active & Pending</option>
+              <option value="finished">Finished</option>
+              <option value="forfeited">Forfeited</option>
+              <option value="declined">Declined</option>
+              <option value="expired">Expired</option>
+            </select>
+            <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-muted);">
+              <input type="checkbox" id="duel-auto-refresh" checked> Auto-refresh (5s)
+            </label>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Session ID</th>
+                <th>Host</th>
+                <th>Guest</th>
+                <th>Status</th>
+                <th>Progress</th>
+                <th>Score</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="duels-table-body">
+              <tr><td colspan="8" style="text-align: center; color: var(--text-dim);">Loading live duels…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: DATABASE TABLES (CRUD) -->
+    <section id="tab-db" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🗄️ PostgreSQL Database Tables (View & Edit)</div>
+          <button class="btn btn-primary" id="btn-db-insert">+ Insert Row</button>
+        </div>
+
+        <div class="subnav" id="db-tables-nav">
+          <button class="subnav-btn active" data-table="users">users</button>
+          <button class="subnav-btn" data-table="status">status</button>
+          <button class="subnav-btn" data-table="attempts">attempts</button>
+          <button class="subnav-btn" data-table="sessions">sessions</button>
+          <button class="subnav-btn" data-table="friends">friends</button>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="db-search-input" class="form-input" placeholder="Search rows in table…">
+          </div>
+          <div style="font-size: 0.88rem; color: var(--text-muted); display: flex; align-items: center; gap: 12px;">
+            <span id="db-table-info">Loading…</span>
+            <button class="btn btn-secondary btn-sm" id="btn-db-prev">← Prev</button>
+            <button class="btn btn-secondary btn-sm" id="btn-db-next">Next →</button>
+          </div>
+        </div>
+
+        <div class="table-responsive" style="max-height: 580px; overflow-y: auto;">
+          <table>
+            <thead id="db-table-head"></thead>
+            <tbody id="db-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: QUESTION BANK -->
+    <section id="tab-questions" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📚 SAT Question Bank Manager</div>
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <div class="search-box">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="q-search" class="form-input" placeholder="Search question ID or text…">
+            </div>
+            <select id="q-domain-filter" class="form-select" style="width: 180px;">
+              <option value="all">All Domains</option>
+              <option value="Information and Ideas">Information and Ideas</option>
+              <option value="Craft and Structure">Craft and Structure</option>
+              <option value="Expression of Ideas">Expression of Ideas</option>
+              <option value="Standard English Conventions">Standard English Conventions</option>
+            </select>
+            <select id="q-diff-filter" class="form-select" style="width: 140px;">
+              <option value="all">All Difficulties</option>
+              <option value="Easy">Easy</option>
+              <option value="Medium">Medium</option>
+              <option value="Hard">Hard</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <span id="q-count-info" style="font-size: 0.88rem; color: var(--text-muted);">Loading questions…</span>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" id="btn-q-prev">← Prev</button>
+            <button class="btn btn-secondary btn-sm" id="btn-q-next">Next →</button>
+          </div>
+        </div>
+
+        <div id="questions-list">
+          <!-- Rendered Question Cards -->
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODALS -->
+
+  <!-- 1. Password Auth Modal -->
+  <div class="modal-backdrop" id="modal-auth">
+    <div class="modal" style="max-width: 420px;">
+      <div class="modal-header">
+        <div class="card-title">🔒 Admin Authentication</div>
+      </div>
+      <div class="modal-body">
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px;">
+          Enter the Master Admin Password configured in your server environment to access the dashboard.
+        </p>
+        <div class="form-group">
+          <label class="form-label">Master Admin Password</label>
+          <input type="password" id="input-admin-password" class="form-input" placeholder="Enter password…" autofocus>
+        </div>
+        <div id="auth-error-msg" style="color: var(--danger); font-size: 0.84rem; display: none; margin-top: 8px;">
+          Incorrect password. Please try again.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="btn-auth-submit" style="width: 100%;">Unlock Dashboard 🔓</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Change PIN Modal -->
+  <div class="modal-backdrop" id="modal-pin">
+    <div class="modal" style="max-width: 440px;">
+      <div class="modal-header">
+        <div class="card-title">🔑 Change User PIN</div>
+        <button class="btn btn-secondary btn-sm modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px;">
+          Changing PIN for <strong id="pin-modal-user" style="color: white;">-</strong>.
+        </p>
+        <div class="form-group">
+          <label class="form-label">New 6-Digit PIN</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="input-new-pin" class="form-input mono" maxlength="10" placeholder="123456">
+            <button class="btn btn-secondary btn-sm" id="btn-rand-pin">Random</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-pin">Save PIN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Create User Modal -->
+  <div class="modal-backdrop" id="modal-create-user">
+    <div class="modal" style="max-width: 440px;">
+      <div class="modal-header">
+        <div class="card-title">👤 Create New User</div>
+        <button class="btn btn-secondary btn-sm modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Player Name</label>
+          <input type="text" id="input-create-name" class="form-input" placeholder="e.g. Tariq">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Initial PIN</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="input-create-pin" class="form-input mono" placeholder="Random if empty">
+            <button class="btn btn-secondary btn-sm" id="btn-create-rand-pin">Random</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close">Cancel</button>
+        <button class="btn btn-primary" id="btn-submit-create-user">Create User</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Edit DB Row Modal -->
+  <div class="modal-backdrop" id="modal-db-edit">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="card-title" id="modal-db-title">✏️ Edit Row</div>
+        <button class="btn btn-secondary btn-sm modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-db-form-fields">
+        <!-- Generated fields -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-db-row">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Edit Question Modal -->
+  <div class="modal-backdrop" id="modal-q-edit">
+    <div class="modal" style="max-width: 720px;">
+      <div class="modal-header">
+        <div class="card-title">✏️ Edit Question (<span id="edit-q-id" class="mono">-</span>)</div>
+        <button class="btn btn-secondary btn-sm modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Question Prompt / Passage</label>
+          <textarea id="edit-q-text" class="form-textarea" style="min-height: 120px;"></textarea>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Choice A</label>
+            <input type="text" id="edit-q-a" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Choice B</label>
+            <input type="text" id="edit-q-b" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Choice C</label>
+            <input type="text" id="edit-q-c" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Choice D</label>
+            <input type="text" id="edit-q-d" class="form-input">
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Correct Choice</label>
+            <select id="edit-q-correct" class="form-select">
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Difficulty</label>
+            <select id="edit-q-diff" class="form-select">
+              <option value="Easy">Easy</option>
+              <option value="Medium">Medium</option>
+              <option value="Hard">Hard</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rationale / Explanation</label>
+          <textarea id="edit-q-rationale" class="form-textarea" style="min-height: 100px;"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-question">Save Question</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script>
+    // ── Global State & Auth ──────────────────────────────────────────────────
+    let adminKey = sessionStorage.getItem("sat_admin_key") || "";
+    let currentTab = "tab-overview";
+    let duelPollInterval = null;
+
+    // Database browser state
+    let activeDbTable = "users";
+    let dbOffset = 0;
+    const dbLimit = 25;
+    let currentDbCols = [];
+    let editingRowPk = null;
+    let isDbInsert = false;
+
+    // Question bank state
+    let qPage = 1;
+    let cachedQuestions = [];
+    let editingQ = null;
+
+    function toast(msg, type = "success") {
+      const c = document.getElementById("toast-container");
+      const el = document.createElement("div");
+      el.className = `toast toast-${type}`;
+      el.textContent = msg;
+      c.appendChild(el);
+      setTimeout(() => el.remove(), 4000);
+    }
+
+    async function api(path, opts = {}) {
+      opts.headers = opts.headers || {};
+      opts.headers["x-admin-key"] = adminKey;
+      if (opts.body && typeof opts.body === "object") {
+        opts.headers["Content-Type"] = "application/json";
+        opts.body = JSON.stringify(opts.body);
+      }
+      try {
+        const res = await fetch(path, opts);
+        if (res.status === 401) {
+          showAuthModal();
+          return null;
+        }
+        return await res.json();
+      } catch (err) {
+        console.error("API Error", err);
+        toast("Network error connecting to API", "error");
+        return null;
+      }
+    }
+
+    function showAuthModal() {
+      document.getElementById("modal-auth").classList.add("open");
+      document.getElementById("input-admin-password").focus();
+    }
+
+    async function verifyAndUnlock(pwd) {
+      const err = document.getElementById("auth-error-msg");
+      err.style.display = "none";
+      try {
+        const res = await fetch("/api/admin/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: pwd })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          adminKey = pwd;
+          sessionStorage.setItem("sat_admin_key", pwd);
+          document.getElementById("modal-auth").classList.remove("open");
+          toast("Dashboard unlocked 🔓");
+          loadCurrentTab();
+        } else {
+          err.style.display = "block";
+        }
+      } catch (e) {
+        err.textContent = "Server unreachable";
+        err.style.display = "block";
+      }
+    }
+
+    // ── Navigation Tabs ──────────────────────────────────────────────────────
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+        btn.classList.add("active");
+        currentTab = btn.dataset.tab;
+        document.getElementById(currentTab).classList.add("active");
+        loadCurrentTab();
+      });
+    });
+
+    function loadCurrentTab() {
+      if (currentTab === "tab-overview") loadOverview();
+      else if (currentTab === "tab-users") loadUsers();
+      else if (currentTab === "tab-duels") loadDuels();
+      else if (currentTab === "tab-db") loadDbTable(activeDbTable);
+      else if (currentTab === "tab-questions") loadQuestions();
+    }
+
+    document.getElementById("btn-refresh").addEventListener("click", () => {
+      loadCurrentTab();
+      toast("Refreshed 🔄");
+    });
+
+    document.getElementById("btn-logout").addEventListener("click", () => {
+      adminKey = "";
+      sessionStorage.removeItem("sat_admin_key");
+      showAuthModal();
+    });
+
+    // ── Tab 1: Overview ──────────────────────────────────────────────────────
+    async function loadOverview() {
+      const r = await api("/api/admin/stats");
+      if (!r || !r.ok) return;
+      const s = r.stats;
+      document.getElementById("stat-total-users").textContent = s.totalUsers;
+      document.getElementById("stat-online-users").textContent = s.onlineUsers;
+      document.getElementById("stat-total-attempts").textContent = s.totalAttempts;
+      document.getElementById("stat-accuracy").textContent = `${s.accuracy}% Accuracy (${s.correctAttempts} correct)`;
+      document.getElementById("stat-today-attempts").textContent = s.todayAttempts;
+      document.getElementById("stat-today-accuracy").textContent = `${s.todayAccuracy}% Today Accuracy`;
+      
+      const totalSessions = Object.values(s.sessions).reduce((a, b) => a + b, 0);
+      document.getElementById("stat-total-sessions").textContent = totalSessions;
+      document.getElementById("stat-active-sessions").textContent = s.sessions.active || 0;
+
+      // Hardest questions table
+      const tbody = document.getElementById("hardest-questions-body");
+      if (!s.hardestQuestions || !s.hardestQuestions.length) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-dim);">No error attempt data yet</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = s.hardestQuestions.map(q => `
+        <tr>
+          <td><span class="mono">${esc(q.question_id)}</span></td>
+          <td>${q.total}</td>
+          <td><span class="badge badge-danger">${q.wrong} wrong</span></td>
+          <td><span class="badge ${q.accuracy > 50 ? 'badge-warning' : 'badge-danger'}">${q.accuracy}%</span></td>
+          <td>
+            <button class="btn btn-secondary btn-sm" onclick="previewQuestion('${esc(q.question_id)}')">Preview & Edit</button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    // ── Tab 2: Users & PINs ──────────────────────────────────────────────────
+    let allUsers = [];
+    async function loadUsers() {
+      const r = await api("/api/admin/users");
+      if (!r || !r.ok) return;
+      allUsers = r.users;
+      renderUsers();
+    }
+
+    function renderUsers() {
+      const filter = (document.getElementById("user-search").value || "").toLowerCase().trim();
+      const list = allUsers.filter(u => u.name.toLowerCase().includes(filter));
+      const tbody = document.getElementById("users-table-body");
+      if (!list.length) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-dim);">No users found</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = list.map(u => {
+        const acc = u.total_attempts ? Math.round((u.correct_attempts / u.total_attempts) * 100) : 0;
+        const onlineBadge = u.is_online 
+          ? `<span class="badge badge-success">🟢 Online</span>` 
+          : `<span class="badge badge-secondary">⚪ Offline</span>`;
+        const createdDate = u.created_at ? new Date(u.created_at).toLocaleDateString() : "-";
+
+        return `
+          <tr>
+            <td><strong>${esc(u.name)}</strong></td>
+            <td>
+              <span class="mono" id="pin-${esc(u.name)}" style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px;">••••••</span>
+              <button class="btn btn-secondary btn-sm" style="padding: 2px 6px; margin-left: 4px;" onclick="togglePinView('${esc(u.name)}', '${esc(u.pin)}')">👁️</button>
+            </td>
+            <td>${onlineBadge}</td>
+            <td><strong>${u.today_count}</strong> today</td>
+            <td>${u.total_attempts} (${u.correct_attempts} right)</td>
+            <td><span class="badge ${acc >= 70 ? 'badge-success' : (acc >= 40 ? 'badge-warning' : 'badge-danger')}">${acc}%</span></td>
+            <td>${createdDate}</td>
+            <td>
+              <div style="display: flex; gap: 6px;">
+                <button class="btn btn-secondary btn-sm" onclick="openPinModal('${esc(u.name)}')">Reset PIN</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteUser('${esc(u.name)}')">Delete</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    document.getElementById("user-search").addEventListener("input", renderUsers);
+
+    window.togglePinView = function(name, pin) {
+      const el = document.getElementById(`pin-${name}`);
+      if (!el) return;
+      el.textContent = el.textContent === "••••••" ? pin : "••••••";
+    };
+
+    let targetPinUser = "";
+    window.openPinModal = function(name) {
+      targetPinUser = name;
+      document.getElementById("pin-modal-user").textContent = name;
+      document.getElementById("input-new-pin").value = "";
+      document.getElementById("modal-pin").classList.add("open");
+      document.getElementById("input-new-pin").focus();
+    };
+
+    document.getElementById("btn-rand-pin").addEventListener("click", () => {
+      document.getElementById("input-new-pin").value = Math.floor(100000 + Math.random() * 900000);
+    });
+
+    document.getElementById("btn-save-pin").addEventListener("click", async () => {
+      const pin = document.getElementById("input-new-pin").value.trim();
+      if (!pin) { toast("Please enter a PIN", "error"); return; }
+      const r = await api(`/api/admin/users/${encodeURIComponent(targetPinUser)}/pin`, {
+        method: "PATCH",
+        body: { pin }
+      });
+      if (r && r.ok) {
+        toast(`PIN updated for ${targetPinUser} 🔑`);
+        document.getElementById("modal-pin").classList.remove("open");
+        loadUsers();
+      } else {
+        toast("Failed to update PIN", "error");
+      }
+    });
+
+    window.deleteUser = async function(name) {
+      if (!confirm(`Are you sure you want to delete user "${name}"?\nAll attempts, sessions, and friendships will be deleted permanently.`)) return;
+      const r = await api(`/api/admin/users/${encodeURIComponent(name)}`, { method: "DELETE" });
+      if (r && r.ok) {
+        toast(`User ${name} deleted`);
+        loadUsers();
+      }
+    };
+
+    document.getElementById("btn-create-user").addEventListener("click", () => {
+      document.getElementById("input-create-name").value = "";
+      document.getElementById("input-create-pin").value = "";
+      document.getElementById("modal-create-user").classList.add("open");
+    });
+
+    document.getElementById("btn-create-rand-pin").addEventListener("click", () => {
+      document.getElementById("input-create-pin").value = Math.floor(100000 + Math.random() * 900000);
+    });
+
+    document.getElementById("btn-submit-create-user").addEventListener("click", async () => {
+      const name = document.getElementById("input-create-name").value.trim();
+      const pin = document.getElementById("input-create-pin").value.trim();
+      if (!name) { toast("Enter a player name", "error"); return; }
+      const r = await api("/api/admin/users", {
+        method: "POST",
+        body: { name, pin }
+      });
+      if (r && r.ok) {
+        toast(`Created user ${name} with PIN ${r.user.pin} 🎉`);
+        document.getElementById("modal-create-user").classList.remove("open");
+        loadUsers();
+      } else if (r && r.error === "user-exists") {
+        toast("A user with this name already exists", "error");
+      }
+    });
+
+    // ── Tab 3: Live Duels ────────────────────────────────────────────────────
+    async function loadDuels() {
+      const status = document.getElementById("duel-status-filter").value;
+      const r = await api(`/api/admin/sessions?status=${encodeURIComponent(status)}`);
+      if (!r || !r.ok) return;
+      const tbody = document.getElementById("duels-table-body");
+      if (!r.sessions.length) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-dim);">No duels matching filter</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = r.sessions.map(s => {
+        let statusBadge = `<span class="badge badge-secondary">${esc(s.status)}</span>`;
+        if (s.status === "active") statusBadge = `<span class="badge badge-primary">⚔️ Active Duel</span>`;
+        else if (s.status === "pending") statusBadge = `<span class="badge badge-warning">⏳ Pending</span>`;
+        else if (s.status === "finished") statusBadge = `<span class="badge badge-success">🏆 Finished</span>`;
+        else if (s.status === "forfeited") statusBadge = `<span class="badge badge-danger">⛔ Forfeited</span>`;
+
+        const scores = s.scores || { [s.host]: 0, [s.guest]: 0 };
+        const scoreStr = `${esc(s.host)}: <strong>${scores[s.host] || 0}</strong> vs ${esc(s.guest)}: <strong>${scores[s.guest] || 0}</strong>`;
+        const createdDate = s.created_at ? new Date(+s.created_at).toLocaleTimeString() : "-";
+
+        const canTerminate = s.status === "active" || s.status === "pending";
+
+        return `
+          <tr>
+            <td><span class="mono" style="font-size: 0.75rem;">${esc(String(s.id).slice(0, 8))}…</span></td>
+            <td><strong>${esc(s.host)}</strong></td>
+            <td><strong>${esc(s.guest)}</strong></td>
+            <td>${statusBadge}</td>
+            <td>Q ${s.current_index + 1} / ${s.total_questions}</td>
+            <td>${scoreStr}</td>
+            <td>${createdDate}</td>
+            <td>
+              <div style="display: flex; gap: 6px;">
+                ${canTerminate ? `<button class="btn btn-danger btn-sm" onclick="terminateDuel('${esc(s.id)}')">Terminate ⚡</button>` : ""}
+                <button class="btn btn-secondary btn-sm" onclick="deleteDuel('${esc(s.id)}')">Delete</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    document.getElementById("duel-status-filter").addEventListener("change", loadDuels);
+
+    document.getElementById("duel-auto-refresh").addEventListener("change", (e) => {
+      if (e.target.checked) {
+        duelPollInterval = setInterval(() => { if (currentTab === "tab-duels") loadDuels(); }, 5000);
+      } else {
+        clearInterval(duelPollInterval);
+      }
+    });
+    duelPollInterval = setInterval(() => { if (currentTab === "tab-duels") loadDuels(); }, 5000);
+
+    window.terminateDuel = async function(id) {
+      if (!confirm("Force terminate this session? It will be marked forfeited.")) return;
+      const r = await api(`/api/admin/sessions/${encodeURIComponent(id)}/terminate`, { method: "POST" });
+      if (r && r.ok) {
+        toast("Session force-forfeited ⚡");
+        loadDuels();
+      }
+    };
+
+    window.deleteDuel = async function(id) {
+      if (!confirm("Permanently delete this session record?")) return;
+      const r = await api(`/api/admin/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (r && r.ok) {
+        toast("Session deleted");
+        loadDuels();
+      }
+    };
+
+    // ── Tab 4: Database Tables CRUD ──────────────────────────────────────────
+    document.querySelectorAll(".subnav-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".subnav-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        activeDbTable = btn.dataset.table;
+        dbOffset = 0;
+        loadDbTable(activeDbTable);
+      });
+    });
+
+    async function loadDbTable(table) {
+      const search = (document.getElementById("db-search-input").value || "").trim();
+      document.getElementById("db-table-info").textContent = "Loading rows…";
+
+      const r = await api(`/api/admin/db/${encodeURIComponent(table)}?limit=${dbLimit}&offset=${dbOffset}&search=${encodeURIComponent(search)}`);
+      if (!r || !r.ok) return;
+
+      currentDbCols = r.columns || [];
+      const thead = document.getElementById("db-table-head");
+      const tbody = document.getElementById("db-table-body");
+
+      // Table Headers
+      thead.innerHTML = `<tr>
+        ${currentDbCols.map(c => `<th>${esc(c.column_name)}</th>`).join("")}
+        <th>Actions</th>
+      </tr>`;
+
+      document.getElementById("db-table-info").textContent = 
+        `Table: ${table} | Showing ${r.rows.length ? dbOffset + 1 : 0} - ${dbOffset + r.rows.length} of ${r.total} rows`;
+
+      if (!r.rows.length) {
+        tbody.innerHTML = `<tr><td colspan="${currentDbCols.length + 1}" style="text-align: center; color: var(--text-dim);">No records found</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = r.rows.map((row, rowIdx) => {
+        return `
+          <tr>
+            ${currentDbCols.map(c => {
+              let val = row[c.column_name];
+              if (val !== null && typeof val === "object") val = JSON.stringify(val);
+              return `<td class="mono" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${esc(String(val ?? ''))}">${esc(String(val ?? 'NULL'))}</td>`;
+            }).join("")}
+            <td>
+              <div style="display: flex; gap: 4px;">
+                <button class="btn btn-secondary btn-sm" onclick="openDbEditModal(${rowIdx})">✏️</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteDbRow(${rowIdx})">🗑️</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+
+      // Store in memory for edit modal
+      window._currentDbRows = r.rows;
+    }
+
+    document.getElementById("db-search-input").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        dbOffset = 0;
+        loadDbTable(activeDbTable);
+      }
+    });
+
+    document.getElementById("btn-db-prev").addEventListener("click", () => {
+      if (dbOffset >= dbLimit) {
+        dbOffset -= dbLimit;
+        loadDbTable(activeDbTable);
+      }
+    });
+
+    document.getElementById("btn-db-next").addEventListener("click", () => {
+      dbOffset += dbLimit;
+      loadDbTable(activeDbTable);
+    });
+
+    function getTablePk(table, row) {
+      if (table === "users" || table === "status") return { name: row.name };
+      if (table === "attempts" || table === "sessions") return { id: row.id };
+      if (table === "friends") return { user_name: row.user_name, friend_name: row.friend_name };
+      return { id: row.id };
+    }
+
+    window.openDbEditModal = function(rowIdx) {
+      isDbInsert = false;
+      const row = window._currentDbRows[rowIdx];
+      editingRowPk = getTablePk(activeDbTable, row);
+
+      document.getElementById("modal-db-title").textContent = `✏️ Edit ${activeDbTable} Row`;
+      const container = document.getElementById("modal-db-form-fields");
+      container.innerHTML = currentDbCols.map(c => {
+        let val = row[c.column_name];
+        if (val !== null && typeof val === "object") val = JSON.stringify(val);
+        const isPk = editingRowPk && editingRowPk.hasOwnProperty(c.column_name);
+        return `
+          <div class="form-group">
+            <label class="form-label">${esc(c.column_name)} <span style="color: var(--text-dim);">(${esc(c.data_type)})${isPk ? ' [PK]' : ''}</span></label>
+            <input type="text" class="form-input db-edit-field" data-col="${esc(c.column_name)}" value="${esc(String(val ?? ''))}">
+          </div>
+        `;
+      }).join("");
+
+      document.getElementById("modal-db-edit").classList.add("open");
+    };
+
+    document.getElementById("btn-db-insert").addEventListener("click", () => {
+      isDbInsert = true;
+      editingRowPk = null;
+      document.getElementById("modal-db-title").textContent = `➕ Insert Into ${activeDbTable}`;
+      const container = document.getElementById("modal-db-form-fields");
+      container.innerHTML = currentDbCols.map(c => `
+        <div class="form-group">
+          <label class="form-label">${esc(c.column_name)} <span style="color: var(--text-dim);">(${esc(c.data_type)})</span></label>
+          <input type="text" class="form-input db-edit-field" data-col="${esc(c.column_name)}" placeholder="Enter value…">
+        </div>
+      `).join("");
+      document.getElementById("modal-db-edit").classList.add("open");
+    });
+
+    document.getElementById("btn-save-db-row").addEventListener("click", async () => {
+      const data = {};
+      document.querySelectorAll(".db-edit-field").forEach(input => {
+        const col = input.dataset.col;
+        const val = input.value.trim();
+        if (val !== "") data[col] = val;
+      });
+
+      if (isDbInsert) {
+        const r = await api(`/api/admin/db/${encodeURIComponent(activeDbTable)}/row`, {
+          method: "POST",
+          body: { data }
+        });
+        if (r && r.ok) {
+          toast(`Row inserted into ${activeDbTable}`);
+          document.getElementById("modal-db-edit").classList.remove("open");
+          loadDbTable(activeDbTable);
+        } else {
+          toast(r && r.error ? `Error: ${r.error}` : "Insert failed", "error");
+        }
+      } else {
+        const r = await api(`/api/admin/db/${encodeURIComponent(activeDbTable)}/row`, {
+          method: "PATCH",
+          body: { pk: editingRowPk, data }
+        });
+        if (r && r.ok) {
+          toast(`Row updated in ${activeDbTable}`);
+          document.getElementById("modal-db-edit").classList.remove("open");
+          loadDbTable(activeDbTable);
+        } else {
+          toast(r && r.error ? `Error: ${r.error}` : "Update failed", "error");
+        }
+      }
+    });
+
+    window.deleteDbRow = async function(rowIdx) {
+      const row = window._currentDbRows[rowIdx];
+      const pk = getTablePk(activeDbTable, row);
+      if (!confirm(`Are you sure you want to delete this row from ${activeDbTable}?`)) return;
+
+      const r = await api(`/api/admin/db/${encodeURIComponent(activeDbTable)}/row`, {
+        method: "DELETE",
+        body: { pk }
+      });
+      if (r && r.ok) {
+        toast(`Row deleted from ${activeDbTable}`);
+        loadDbTable(activeDbTable);
+      } else {
+        toast("Delete failed", "error");
+      }
+    };
+
+    // ── Tab 5: Question Bank ─────────────────────────────────────────────────
+    async function loadQuestions() {
+      const q = (document.getElementById("q-search").value || "").trim();
+      const domain = document.getElementById("q-domain-filter").value;
+      const difficulty = document.getElementById("q-diff-filter").value;
+      const container = document.getElementById("questions-list");
+
+      document.getElementById("q-count-info").textContent = "Loading questions…";
+
+      // Try server endpoint first; fall back to sat_db.json static fetch if offline
+      let res = await api(`/api/admin/questions?page=${qPage}&limit=15&q=${encodeURIComponent(q)}&domain=${encodeURIComponent(domain)}&difficulty=${encodeURIComponent(difficulty)}`);
+      
+      let questions = [];
+      let total = 0;
+
+      if (res && res.ok) {
+        questions = res.questions;
+        total = res.total;
+      } else {
+        // Fallback static load
+        if (!cachedQuestions.length) {
+          try {
+            const raw = await fetch("/sat_db.json");
+            cachedQuestions = await raw.json();
+          } catch (e) {
+            container.innerHTML = `<div style="color: var(--danger);">Failed to load questions database.</div>`;
+            return;
+          }
+        }
+        let filtered = cachedQuestions;
+        if (q) {
+          const lq = q.toLowerCase();
+          filtered = filtered.filter(item => 
+            (item.id && item.id.toLowerCase().includes(lq)) ||
+            (item.question && item.question.toLowerCase().includes(lq))
+          );
+        }
+        if (domain && domain !== "all") filtered = filtered.filter(i => i.domain === domain);
+        if (difficulty && difficulty !== "all") filtered = filtered.filter(i => i.difficulty === difficulty);
+        total = filtered.length;
+        questions = filtered.slice((qPage - 1) * 15, qPage * 15);
+      }
+
+      document.getElementById("q-count-info").textContent = `Showing ${questions.length} of ${total} questions (Page ${qPage})`;
+      window._loadedQuestions = questions;
+
+      if (!questions.length) {
+        container.innerHTML = `<div style="text-align: center; color: var(--text-dim); padding: 40px;">No questions match filter</div>`;
+        return;
+      }
+
+      container.innerHTML = questions.map((item, idx) => `
+        <div class="q-card">
+          <div class="q-meta">
+            <span class="mono" style="background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 4px; font-weight: 700;">#${esc(item.id)}</span>
+            <span class="badge badge-primary">${esc(item.domain || 'Domain')}</span>
+            <span class="badge badge-secondary">${esc(item.skill || 'Skill')}</span>
+            <span class="badge ${item.difficulty === 'Hard' ? 'badge-danger' : (item.difficulty === 'Medium' ? 'badge-warning' : 'badge-success')}">${esc(item.difficulty || 'Normal')}</span>
+            <span class="badge badge-success">Answer: ${esc(item.correct || '?')}</span>
+          </div>
+          <p style="font-size: 0.92rem; line-height: 1.6; margin-bottom: 12px; color: #e5e7eb;">
+            ${esc(item.question || '').slice(0, 320)}${(item.question || '').length > 320 ? '…' : ''}
+          </p>
+          <div style="display: flex; justify-content: flex-end;">
+            <button class="btn btn-secondary btn-sm" onclick="openEditQuestion(${idx})">✏️ Edit Question</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    document.getElementById("q-search").addEventListener("input", () => { qPage = 1; loadQuestions(); });
+    document.getElementById("q-domain-filter").addEventListener("change", () => { qPage = 1; loadQuestions(); });
+    document.getElementById("q-diff-filter").addEventListener("change", () => { qPage = 1; loadQuestions(); });
+
+    document.getElementById("btn-q-prev").addEventListener("click", () => {
+      if (qPage > 1) { qPage--; loadQuestions(); }
+    });
+    document.getElementById("btn-q-next").addEventListener("click", () => {
+      qPage++; loadQuestions();
+    });
+
+    window.openEditQuestion = function(idx) {
+      editingQ = window._loadedQuestions[idx];
+      if (!editingQ) return;
+      document.getElementById("edit-q-id").textContent = editingQ.id;
+      document.getElementById("edit-q-text").value = editingQ.question || "";
+      document.getElementById("edit-q-a").value = (editingQ.choices && editingQ.choices.A) || "";
+      document.getElementById("edit-q-b").value = (editingQ.choices && editingQ.choices.B) || "";
+      document.getElementById("edit-q-c").value = (editingQ.choices && editingQ.choices.C) || "";
+      document.getElementById("edit-q-d").value = (editingQ.choices && editingQ.choices.D) || "";
+      document.getElementById("edit-q-correct").value = editingQ.correct || "A";
+      document.getElementById("edit-q-diff").value = editingQ.difficulty || "Medium";
+      document.getElementById("edit-q-rationale").value = editingQ.rationale || "";
+
+      document.getElementById("modal-q-edit").classList.add("open");
+    };
+
+    window.previewQuestion = async function(qid) {
+      document.getElementById("main-nav").querySelector("[data-tab='tab-questions']").click();
+      document.getElementById("q-search").value = qid;
+      qPage = 1;
+      await loadQuestions();
+    };
+
+    document.getElementById("btn-save-question").addEventListener("click", async () => {
+      if (!editingQ) return;
+      const updated = {
+        question: document.getElementById("edit-q-text").value,
+        choices: {
+          A: document.getElementById("edit-q-a").value,
+          B: document.getElementById("edit-q-b").value,
+          C: document.getElementById("edit-q-c").value,
+          D: document.getElementById("edit-q-d").value,
+        },
+        correct: document.getElementById("edit-q-correct").value,
+        difficulty: document.getElementById("edit-q-diff").value,
+        rationale: document.getElementById("edit-q-rationale").value,
+      };
+
+      const r = await api(`/api/admin/questions/${encodeURIComponent(editingQ.id)}`, {
+        method: "PATCH",
+        body: updated
+      });
+      if (r && r.ok) {
+        toast(`Question #${editingQ.id} updated! 🎉`);
+        document.getElementById("modal-q-edit").classList.remove("open");
+        loadQuestions();
+      } else {
+        toast("Saved locally (server sat_db update not active)", "warning");
+        document.getElementById("modal-q-edit").classList.remove("open");
+      }
+    });
+
+    // ── Global Modal Close Handlers ──────────────────────────────────────────
+    document.querySelectorAll(".modal-close").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".modal-backdrop").forEach(m => {
+          if (m.id !== "modal-auth") m.classList.remove("open");
+        });
+      });
+    });
+
+    document.querySelectorAll(".modal-backdrop").forEach(backdrop => {
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop && backdrop.id !== "modal-auth") {
+          backdrop.classList.remove("open");
+        }
+      });
+    });
+
+    // Auth submit handler
+    document.getElementById("btn-auth-submit").addEventListener("click", () => {
+      verifyAndUnlock(document.getElementById("input-admin-password").value.trim());
+    });
+    document.getElementById("input-admin-password").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        verifyAndUnlock(e.target.value.trim());
+      }
+    });
+
+    // Helper
+    function esc(s) {
+      return String(s || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    // Initial check
+    if (!adminKey) {
+      showAuthModal();
+    } else {
+      loadCurrentTab();
+    }
+  </script>
+</body>
+</html>

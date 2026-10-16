@@ -6,6 +6,11 @@
 # If the VPS IP ever changes (no Elastic IP), update it below and redeploy.
 
 [[redirects]]
+  from = "/admin"
+  to = "/admin.html"
+  status = 200
+
+[[redirects]]
   from = "/api/*"
   to = "http://51.84.109.28:3001/api/:splat"
   status = 200
@@ -16,3 +21,4 @@
   to = "http://51.84.109.28:3001/socket.io/:splat"
   status = 200
   force = true
+
