@@ -22,6 +22,10 @@ sudo ln -s /etc/nginx/sites-available/satbank /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d your-domain.com
 curl https://your-domain.com/api/health  # {"ok":true,...}
+# No domain? Use the sslip.io hostname for your VPS IP (dashes, not dots):
+# server_name 51-84-109-28.sslip.io + `sudo certbot --nginx -d 51-84-109-28.sslip.io`.
+# Direct https:// access is required — browsers block HTTPS pages from calling
+# plain http://IP backends (mixed content), which is why the Netlify proxy existed.
 ```
 
 ```bash

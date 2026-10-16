@@ -101,6 +101,38 @@ function ensurePin(name) {
   return pin;
 }
 
+// Sessions I forfeited (survives reload in this tab): the boot rejoin must
+// never resurrect them — a lost forfeit write would otherwise countdown-loop.
+function loadForfeited() {
+  try { return JSON.parse(sessionStorage.getItem("satbank:forfeited") || "{}") || {}; }
+  catch (e) { return {}; }
+}
+function markForfeited(id) {
+  if (!id) return;
+  try {
+    Net._forfeited = Net._forfeited || {};
+    Net._forfeited[id] = Date.now();
+    sessionStorage.setItem("satbank:forfeited", JSON.stringify(Net._forfeited));
+  } catch (e) {}
+}
+// Beacon forfeit: the only delivery that survives tab close. text/plain blob
+// keeps it a CORS-simple request (no preflight); the server parses both.
+function sendForfeitBeacon(id) {
+  try {
+    if (!id || !Net.name) return;
+    const body = JSON.stringify({ actor: Net.name, pin: getPin(Net.name), action: "forfeit" });
+    navigator.sendBeacon(BASE + "/api/sessions/" + encodeURIComponent(id),
+      new Blob([body], { type: "text/plain" }));
+  } catch (e) {}
+}
+// Online state: trust the server-computed flag (server clock, 75s window).
+// Client-clock math is the fallback only when the flag is missing.
+function isOnlinePerson(p, now) {
+  if (!p) return false;
+  if (typeof p.online === "boolean") return p.online;
+  return ((now || Date.now()) - (p.lastSeen || 0)) < 30000;
+}
+
 // ── Net object (same public surface as net.js) ─────────────────────────────
 const Net = {
   on: true,
@@ -129,11 +161,18 @@ const Net = {
   myTimes: [], frTimes: [],
   revealed: false,
   _myPick: null, _reveals: {}, _bIdx: 0,
+  _watching: null,   // session id this client explicitly follows (watch/accept/create)
+  _sessSyncMs: 0,    // last time ANY session update was processed (socket or REST)
+  _presenceAt: 0,    // last time a presence list arrived
+  _beatSentMs: 0,    // last heartbeat sent
+  _invitePollHiddenMs: 0,
+  _forfeited: {},    // session ids I gave up on (survives reload via sessionStorage)
 };
 // Keep the Firestore impl (loaded first) for best-effort dual-write of answers.
 const NetFS = (window.Net && !window.Net.backend) ? window.Net : null;
 window.Net = Net;
 window.NetBackend = Net;
+Net._forfeited = loadForfeited();
 
 // ── answer cache (same shape as net.js: instant paint on boot) ─────────────
 const LS_ANS = name => "satbank:answers:" + name;
@@ -186,15 +225,16 @@ Net.init = async function (db) {
             (s.host === Net.name || s.guest === Net.name)) {
           // Unload forfeit: beacon is the only delivery that survives tab close.
           // Guest holding only an unaccepted invite has no session: nothing to forfeit.
-          const body = JSON.stringify({ actor: Net.name, pin: getPin(Net.name), action: "forfeit" });
-          try {
-            navigator.sendBeacon(BASE + "/api/sessions/" + encodeURIComponent(s.id),
-              new Blob([body], { type: "application/json" }));
-          } catch (e) {}
+          sendForfeitBeacon(s.id);
+          markForfeited(s.id);
         }
       } catch (e) {}
-      api("/api/status/" + encodeURIComponent(Net.name) + "/offline",
-        { method: "POST", body: {}, keepalive: true });
+      if (!Net.socket || !Net.socket.connected) {
+        // Socket-less clients only: explicit offline write. With a live socket
+        // the server's disconnect grace covers tab close without blinking offline.
+        api("/api/status/" + encodeURIComponent(Net.name) + "/offline",
+          { method: "POST", body: {}, keepalive: true });
+      }
       try { Net.socket && Net.socket.disconnect(); } catch (e) {}
     });
     // Leaving mid-duel forfeits (pagehide above fires on confirm). Solo play never nags.
@@ -227,6 +267,16 @@ function connectSocket() {
     if (Net.name && getPin(Net.name)) so.emit("identify", { name: Net.name, pin: getPin(Net.name) });
     // Reconnect mid-duel: rooms live on the old socket, so rejoin or updates stop arriving.
     if (Net.session && Net.session.id) so.emit("session:join", { id: Net.session.id });
+    // Safety net: re-pull any pending invite the push may have missed.
+    (async () => {
+      if (!Net.name) return;
+      try {
+        const inv = await api("/api/invites/pending?user=" + encodeURIComponent(Net.name) +
+          "&pin=" + encodeURIComponent(getPin(Net.name)));
+        if (inv && inv.invite && (!pendingInvite || pendingInvite.id !== inv.invite.id))
+          showInvite(inv.invite.id, inv.invite);
+      } catch (e) {}
+    })();
   });
   so.on("disconnect", () => { Net.sockOk = false; startPollFallback(); });
   so.on("identify:reject", () => {
@@ -309,16 +359,37 @@ async function identify(name, pin, quiet) {
     if (inv && inv.invite) showInvite(inv.invite.id, inv.invite);
   }
   // Rejoin a duel that was live across reload (scores restart — same as Firestore build).
+  // Sessions I forfeited are never resurrected: the server gets a cleanup
+  // forfeit in case the original write died with the reload. Active sessions
+  // ask first — no more surprise 3-2-1 countdown loops.
   try {
     const live = await api("/api/sessions/live?user=" + encodeURIComponent(name) +
       "&pin=" + encodeURIComponent(getPin(name)));
     if (live && live.session) {
       const s = live.session;
-      if (s.status === "active") watchSession(s.id);
+      if (Net._forfeited && Net._forfeited[s.id]) {
+        try { delete Net._forfeited[s.id]; sessionStorage.setItem("satbank:forfeited", JSON.stringify(Net._forfeited)); } catch (e2) {}
+        api("/api/sessions/" + encodeURIComponent(s.id),
+          { method: "PATCH", keepalive: true, body: { actor: name, pin: getPin(name), action: "forfeit" } });
+      } else if (s.status === "active") {
+        const foe = s.host === name ? s.guest : s.host;
+        const nq = s.totalQuestions || (s.questionIds || []).length;
+        let back = false;
+        try { back = window.confirm(`Rejoin your duel vs ${foe}? (Q${(s.currentIndex || 0) + 1} of ${nq})`); } catch (e2) {}
+        if (back) watchSession(s.id);
+        else {
+          markForfeited(s.id);
+          api("/api/sessions/" + encodeURIComponent(s.id),
+            { method: "PATCH", keepalive: true, body: { actor: name, pin: getPin(name), action: "forfeit" } });
+          if (pendingInvite && pendingInvite.id === s.id) hideInvite();
+        }
+      }
       else if (s.status === "pending" && s.host === name) { watchSession(s.id); sayChall("Waiting for opponent…"); }
+      else if (s.status === "pending" && s.guest === name) { showInvite(s.id, s); }
     }
   } catch (e) {}
   startInvitePoll();
+  startPresenceWatchdog();
   startHeartbeat();
   if (!quiet) toast("Online as " + name + " ✅");
   if (NetFS) { // dual-write target prep (answers only — no Firestore listeners started)
@@ -351,31 +422,59 @@ function startHeartbeat() {
   if (Net.beatTimer) return;
   Net.beatTimer = setInterval(async () => {
     if (!Net.name) return;
-    if (document.visibilityState === "hidden") return;
-    if (Date.now() - (Net._lastActionMs || 0) < 45000) return;
+    // Freshness beats write-saving: lastSeen must stay well inside the
+    // server's online window (75s). Visible tabs beat every ~25s, hidden ~60s.
+    const gap = document.visibilityState === "hidden" ? 60000 : 25000;
+    if (Date.now() - (Net._beatSentMs || 0) < gap) return;
+    Net._beatSentMs = Date.now();
     api("/api/status/" + encodeURIComponent(Net.name) + "/heartbeat",
       { method: "POST", body: { pin: getPin(Net.name) } });
-  }, 30000);
+  }, 10000);
 }
-// Invite safety net: socket is primary, but a 10s poll guarantees delivery
-// even when the socket is down (Firestore onSnapshot never had this gap).
+// Invite safety net: socket is primary, but polling guarantees delivery
+// even when the socket is down. Hidden tabs poll slower — an invite must
+// survive the ~90s server TTL to be seen.
 function startInvitePoll() {
   if (Net.invitePoll) return;
   Net.invitePoll = setInterval(async () => {
-    if (!Net.name || document.visibilityState === "hidden") return;
+    if (!Net.name) return;
+    if (document.visibilityState === "hidden") {
+      if (Date.now() - (Net._invitePollHiddenMs || 0) < 30000) return;
+      Net._invitePollHiddenMs = Date.now();
+    }
     const r = await api("/api/invites/pending?user=" + encodeURIComponent(Net.name) +
       "&pin=" + encodeURIComponent(getPin(Net.name)));
     if (r && r.invite) {
       if (!pendingInvite || pendingInvite.id !== r.invite.id) showInvite(r.invite.id, r.invite);
-    } else if (pendingInvite && Date.now() - (pendingInvite.at || 0) > 75000) {
+    } else if (pendingInvite && Date.now() - (pendingInvite.at || 0) > 100000) {
       hideInvite(); // server sweep expired it while the socket was down
     }
   }, 10000);
+}
+// Presence watchdog: a connected-but-silent socket must not freeze the roster
+// (stale lastSeen decays to "0 online" with no recovery). REST-refreshes when
+// no push arrived for 45s, whatever the socket claims.
+function startPresenceWatchdog() {
+  if (Net._presenceWatch) return;
+  Net._presenceWatch = setInterval(async () => {
+    if (!Net.name || document.visibilityState === "hidden") return;
+    if (Date.now() - (Net._presenceAt || 0) < 45000) return;
+    await refreshPresence();
+  }, 15000);
+}
+async function refreshPresence() {
+  try {
+    if (!Net.name) return;
+    const r = await api("/api/status?scope=friends&user=" + encodeURIComponent(Net.name) +
+      "&pin=" + encodeURIComponent(getPin(Net.name)));
+    if (r && r.ok) onPresence(r.people || []);
+  } catch (e) {}
 }
 
 function onPresence(people) {
   const now = Date.now();
   Net._people = people;
+  Net._presenceAt = now;
   const today = dayKeyOf(now);
   for (const p of people) {
     // A counter untouched since before today still holds yesterday's number — show 0.
@@ -387,7 +486,7 @@ function onPresence(people) {
   if (Net.friend) { try { localStorage.setItem("satbank:friend", Net.friend); } catch (e) {} }
   paintPresence(people, now);
   for (const p of people) {
-    const online = now - (p.lastSeen || 0) < 30000;
+    const online = isOnlinePerson(p, now);
     if (p.name !== Net.name && online && !Net.seenOnline[p.name]) {
       Net.seenOnline[p.name] = true;
       if (FX()) FX().sound("chime");
@@ -427,13 +526,13 @@ function paintPresence(people, now) {
   }
   const btn = $("rosterbtn"), panel = $("rosterpanel");
   const order = rosterOrder(people);
-  const onlineCount = people.filter(p => now - (p.lastSeen || 0) < 30000).length;
+  const onlineCount = people.filter(p => isOnlinePerson(p, now)).length;
   const cnt = btn.querySelector("#rostercount");
   if (cnt) cnt.textContent = onlineCount + " online";
   btn.classList.toggle("alloff", !onlineCount);
   panel.innerHTML = "";
   const MAXR = 30;
-  order.slice(0, MAXR).forEach(p => panel.appendChild(rosterRow(p, now - (p.lastSeen || 0) < 30000)));
+  order.slice(0, MAXR).forEach(p => panel.appendChild(rosterRow(p, isOnlinePerson(p, now))));
   if (order.length > MAXR) {
     const more = document.createElement("div");
     more.className = "roster-more";
@@ -683,7 +782,7 @@ async function renderDuels(box) {
     const tie = decided && hs.ok === gs.ok;
     const foe = s.forfeitedBy || (s.host === Net.name ? s.guest : s.host);
     const title = decided ? (tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins"))
-      : forfeited ? `${foe} forfeited`
+      : forfeited ? (s.forfeitedBy ? `${foe} forfeited` : "Abandoned")
       : `${s.guest} declined`;
     const icon = decided ? (tie ? "🤝" : "🏆") : (forfeited ? "🏳" : "🚫");
     const showScore = decided || forfeited;
@@ -729,8 +828,7 @@ function otherName() {
 function isPersonOnline(name) {
   if (!name || !Net._people) return false;
   const p = Net._people.find(x => x.name === name);
-  if (!p) return false;
-  return (Date.now() - (p.lastSeen || 0)) < 30000;
+  return isOnlinePerson(p, Date.now());
 }
 
 // Online-users list → opponent picker. Click a name = challenge them.
@@ -754,7 +852,7 @@ Net.openChallenge = async function (preset) {
   if (sel) {
     const now = Date.now();
     const local = (Net._people || [])
-      .filter(p => p.name && p.name !== Net.name && (now - (p.lastSeen || 0) < 30000))
+      .filter(p => p.name && p.name !== Net.name && isOnlinePerson(p, now))
       .map(p => p.name);
     fill(local.length ? local : null);
   }
@@ -831,18 +929,31 @@ async function createChallenge() {
       return;
     }
     $("ov-challenge").classList.remove("open");
-    toast("Challenge sent to " + guest + " ⚔️");
+    if (r.merged) {
+      toast("Joined " + guest + "'s challenge ⚔️");
+    } else {
+      toast("Challenge sent to " + guest + " ⚔️");
+      sayChall("Waiting for " + guest + " to accept…");
+    }
     if (FX()) FX().sound("alert");
     watchSession(r.session.id);
-    sayChall("Waiting for " + guest + " to accept…");
     // Host-side timeout (server sweep expires independently; this just unblocks UI).
+    // Re-check the server first: the accept may have landed while we waited, in
+    // which case we join the battle instead of silently abandoning a live duel.
     // Silent clear, never a forfeit confirm: nobody accepted, nothing to forfeit.
     setTimeout(async () => {
-      if (Net.session && Net.session.id === r.session.id && Net.session.status === "pending") {
-        toast("Challenge timed out — " + guest + " didn't respond ⏳");
-        clearChallengeState();
+      if (Net.session && Net.session.id === r.session.id && Net.session.status === "pending" &&
+          Net._watching === r.session.id) {
+        await refreshSession(r.session.id);
+        const cur = Net.session;
+        if (cur && cur.id === r.session.id && cur.status === "pending") {
+          toast("Challenge timed out — " + guest + " didn't respond ⏳");
+          clearChallengeState();
+        }
+        // Active → onSession already moved us into the battle.
+        // Expired/declined → onSession already cleared us.
       }
-    }, 65000);
+    }, 95000);
   } finally {
     Net._creating = false;
   }
@@ -865,6 +976,16 @@ async function acceptChallenge() {
   if (!pendingInvite || Net._accepting) return;
   const id = pendingInvite.id;
   hideInvite();
+  // One duel at a time: cancel my own pending outgoing challenge first so the
+  // two sessions can't strand us in separate games (server expires the rest too).
+  const mine = Net.session;
+  if (mine && mine.id !== id && mine.status === "pending" && mine.host === Net.name) {
+    markForfeited(mine.id);
+    await api("/api/sessions/" + encodeURIComponent(mine.id),
+      { method: "PATCH", body: { actor: Net.name, pin: getPin(Net.name), action: "forfeit" } }).catch(() => {});
+    if (Net.socket && Net.socket.connected) Net.socket.emit("session:leave", { id: mine.id });
+  }
+  Net._watching = id; // follow the accepted session, not the superseded one
   Net._accepting = true;
   const r = await api("/api/sessions/" + encodeURIComponent(id), {
     method: "PATCH", body: { actor: Net.name, pin: getPin(Net.name), action: "accept" },
@@ -872,6 +993,11 @@ async function acceptChallenge() {
   Net._accepting = false;
   if (!r || !r.ok) {
     if (r && r.error === "bad-state") { refreshSession(id); return; } // already accepted elsewhere
+    if (r && r.error === "already-active") {
+      toast("You're already in another duel — finish it first ⚔️");
+      refreshSession(id);
+      return;
+    }
     toast("Couldn't accept (offline?) — try again.");
     return;
   }
@@ -895,21 +1021,25 @@ async function declineChallenge() {
 // deadlocks the guest: host enters via the accept broadcast, guest hears nothing.
 function watchSession(id) {
   stopSessPoll();
+  Net._watching = id;
   if (Net.socket && Net.socket.connected) Net.socket.emit("session:join", { id });
   const syncOnce = async () => {
     const r = await api("/api/sessions/" + encodeURIComponent(id) +
       "?user=" + encodeURIComponent(Net.name) + "&pin=" + encodeURIComponent(getPin(Net.name)));
+    if (Net._watching !== id) return; // superseded or cleared while syncing
     if (r && r.ok) onSession(r.session);
   };
   syncOnce();
   Net.sessPoll = setInterval(async () => {
-    if (Net.sockOk) return; // healthy socket pushes; REST is backup only
+    if (Net._watching !== id) { stopSessPoll(); return; } // superseded: moved to another duel
+    // Healthy socket pushes; REST is a watchdog for missed events (10s), and
+    // the primary channel when the socket is down (2s).
+    if (Net.sockOk && Date.now() - (Net._sessSyncMs || 0) < 10000) return;
     const cur = Net.session;
-    if (cur && cur.id !== id) { stopSessPoll(); return; } // moved on to another duel
     if (cur && cur.id === id && cur.status !== "pending" && cur.status !== "active") { stopSessPoll(); return; }
-    // cur null (pre-first-sync) intentionally keeps polling: never suicide before sync.
     const r = await api("/api/sessions/" + encodeURIComponent(id) +
       "?user=" + encodeURIComponent(Net.name) + "&pin=" + encodeURIComponent(getPin(Net.name)));
+    if (Net._watching !== id) return;
     if (r && r.ok) onSession(r.session);
   }, 2000);
 }
@@ -926,7 +1056,13 @@ async function refreshSession(id) {
 }
 function onSession(s) {
   if (!s || !s.id) return;
-  if (Net.session && Net.session.id !== s.id) return; // stale room event
+  const cur = Net.session ? Net.session.id : null;
+  // _watching (explicit follow: create/accept/rejoin) wins; otherwise only the
+  // current session passes. Stale room events for a superseded session must
+  // never tear down a newer duel (accept/create race).
+  if (Net._watching ? s.id !== Net._watching : (cur && s.id !== cur)) return;
+  Net._sessSyncMs = Date.now();
+  if (pendingInvite && pendingInvite.id === s.id && s.status !== "pending") hideInvite();
   const was = Net.session ? Net.session.status : null;
   Net.session = s;
   if (s.status === "declined" || s.status === "expired") {
@@ -941,7 +1077,8 @@ function onSession(s) {
     const foe = s.forfeitedBy && s.forfeitedBy !== Net.name ? s.forfeitedBy
       : (s.host === Net.name ? s.guest : s.host);
     if (was === "active" || was === "pending") {
-      toast(`${foe} forfeited — match over 🏳`);
+      // forfeitedBy null = abandoned-session sweep, not someone quitting.
+      toast(s.forfeitedBy ? `${foe} forfeited — match over 🏳` : "Match abandoned — opponent gone 🏳");
       showForfeitEnd(s, foe);
     }
     clearChallengeState();
@@ -1247,6 +1384,7 @@ function finishSession(s) {
   }
   if (Net.socket && Net.socket.connected) Net.socket.emit("session:leave", { id: s.id });
   Net.session = null;
+  Net._watching = null;
   stopSessPoll();
   sayChallHide();
 }
@@ -1264,12 +1402,12 @@ function exitBattleView() {
   sayChallHide();
   const cb = $("challpill"); if (cb) cb.style.display = "none";
   const sp = $("scorepill"); if (sp) sp.style.display = "none";
-  try {
-    if (Net._people) paintPresence(Net._people, Date.now());
-  } catch (e) {}
   const nav = $("navpill");
   if (nav) { nav.style.pointerEvents = ""; nav.style.opacity = ""; }
   if (App() && App().renderQ) App().renderQ();
+  // Fresh presence, not a repaint of duel-frozen data — this is the moment the
+  // roster used to decay to "0 online".
+  try { refreshPresence(); } catch (e) {}
 }
 function sayChallHide() {
   const ban = $("banner");
@@ -1295,9 +1433,13 @@ function exitChallenge() {
       (s.host === Net.name || s.guest === Net.name)) {
     if (!window.confirm("Forfeit the match? It will count as unfinished.")) return;
     const id = s.id;
-    // Fire-and-forget: the server broadcast ends it for both sides; bad-state = already over.
+    markForfeited(id);
+    // Awaited + keepalive: an immediate refresh must not strand the session as
+    // active (the old fire-and-forget lost the race with reload → rejoin loop).
     api("/api/sessions/" + encodeURIComponent(id),
-      { method: "PATCH", body: { actor: Net.name, pin: getPin(Net.name), action: "forfeit" } });
+      { method: "PATCH", keepalive: true, body: { actor: Net.name, pin: getPin(Net.name), action: "forfeit" } })
+      .then(r => { if (!r || r.error === "offline") sendForfeitBeacon(id); })
+      .catch(() => sendForfeitBeacon(id));
     if (Net.socket && Net.socket.connected) Net.socket.emit("session:leave", { id });
     toast("Match forfeited 🏳");
   }
@@ -1307,6 +1449,8 @@ function exitChallenge() {
 // Never confirms, never writes — the match is already over server-side.
 function clearChallengeState() {
   Net.session = null;
+  Net._watching = null;
+  Net._sessSyncMs = 0;
   stopSessPoll();
   exitBattleView();
   Net.revealed = false;
@@ -1316,7 +1460,7 @@ function showForfeitEnd(s, foe) {
   exitBattleView();
   const n = s.totalQuestions || (s.questionIds || []).length;
   $("end-trophy").textContent = "🏳";
-  $("end-title").textContent = foe + " forfeited";
+  $("end-title").textContent = s.forfeitedBy ? foe + " forfeited" : "Match abandoned";
   $("end-sub").textContent = `${Net.myScore}–${Net.frScore} after ${Math.min((s.currentIndex || 0) + 1, n)} of ${n} · recorded as unfinished`;
   $("end-grid").innerHTML =
     `<div class="end-card"><b>${Net.myScore}</b><div>you</div></div>` +

@@ -10,8 +10,8 @@ const { Server } = require("socket.io");
 const { Pool } = require("pg");
 
 const PORT = +(process.env.PORT || 3001);
-const ONLINE_WINDOW_MS = +(process.env.ONLINE_WINDOW_MS || 30000);
-const INVITE_TTL_MS = +(process.env.INVITE_TTL_MS || 60000);
+const ONLINE_WINDOW_MS = +(process.env.ONLINE_WINDOW_MS || 75000);
+const INVITE_TTL_MS = +(process.env.INVITE_TTL_MS || 90000);
 const MAX_PRESENCE = +(process.env.MAX_PRESENCE || 30);
 const ORIGINS = String(process.env.CORS_ORIGIN || "*").split(",").map(s => s.trim()).filter(Boolean);
 
@@ -26,7 +26,8 @@ pool.on("error", err => console.error("pg pool error", err.message));
 const app = express();
 app.disable("x-powered-by"); // no framework fingerprint header
 app.use(cors({ origin: ORIGINS.includes("*") ? true : ORIGINS }));
-app.use(express.json({ limit: "256kb" }));
+app.use(express.json({ limit: "256kb", type: ["application/json", "text/plain"] }));
+// text/plain: cross-origin sendBeacon forfeits are preflight-free but still parsed.
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: ORIGINS.includes("*") ? true : ORIGINS } });
@@ -39,6 +40,13 @@ const dayKeyOf = (ms) => {
 const cleanName = (n) => String(n || "").trim().slice(0, 20);
 const isOnline = (lastSeen, now) => (now - (+lastSeen || 0)) < ONLINE_WINDOW_MS;
 const newPin = () => String(crypto.randomInt(100000, 1000000)); // 6 digits
+// One-duel-at-a-time per pair. pairKey is order-independent; the advisory
+// xact lock serializes create/accept for a pair so two simultaneous
+// challenges merge instead of producing two separate sessions.
+const pairKey = (a, b) => {
+  const pair = [cleanName(a), cleanName(b)].sort();
+  return pair[0] + "|" + pair[1];
+};
 
 async function getPin(name) {
   const r = await pool.query("SELECT pin FROM users WHERE name=$1", [name]);
@@ -126,6 +134,28 @@ async function sweepExpiredInvites() {
     }
     return r.rowCount;
   } catch (e) { console.error("sweep", e.message); return 0; }
+}
+
+// Abandoned-duel sweep: an active session where BOTH participants have been
+// silent longer than the presence window is dead (lost forfeit write, double
+// refresh, ...). Mark it forfeited so reloads stop rejoining a ghost
+// countdown. forfeited_by stays NULL = "nobody is here", not "someone quit".
+async function sweepAbandonedSessions(now) {
+  try {
+    const r = await pool.query(
+      `UPDATE sessions SET status='forfeited', finished_at=now()
+       WHERE status='active' AND started_at < now() - interval '60 seconds'
+       AND NOT EXISTS (SELECT 1 FROM status st
+         WHERE (st.name = sessions.host OR st.name = sessions.guest)
+         AND st.last_seen > ($1::bigint - 90000))
+       RETURNING id, host, guest`,
+      [now]);
+    for (const s of r.rows) {
+      io.to("session:" + s.id).emit("session:update",
+        { id: s.id, host: s.host, guest: s.guest, status: "forfeited", forfeitedBy: null });
+    }
+    return r.rowCount;
+  } catch (e) { console.error("sweep-abandoned", e.message); return 0; }
 }
 
 // ── REST ───────────────────────────────────────────────────────────────────
@@ -441,14 +471,66 @@ app.post("/api/sessions", async (req, res) => {
     if (!guest || guest === c.name) return res.status(400).json({ ok: false, error: "bad-guest" });
     if (!(await getPin(guest))) return res.status(404).json({ ok: false, error: "unknown-guest" });
     if (!qids.length || qids.length < n) return res.status(400).json({ ok: false, error: "bad-questions" });
-    const r = await pool.query(
-      `INSERT INTO sessions(host, guest, total_questions, status, current_index, question_ids, current_answers, created_at)
-       VALUES($1,$2,$3,'pending',0,$4,'{}',$5) RETURNING *`,
-      [c.name, guest, n, qids.slice(0, n), Date.now()]);
-    const s = sessionOut(r.rows[0]);
+    // Pair-serialized: two simultaneous challenges between the same two users
+    // must merge into ONE session, never two separate games.
+    const client = await pool.connect();
+    let s, merged = false, expired = [];
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [pairKey(c.name, guest)]);
+      const live = (await client.query(
+        `SELECT * FROM sessions WHERE status IN ('pending','active')
+         AND ((host=$1 AND guest=$2) OR (host=$2 AND guest=$1))
+         ORDER BY created_at DESC`, [c.name, guest])).rows;
+      const active = live.find(r => r.status === "active");
+      if (active) {
+        // Already fighting: join the live duel instead of opening a second one.
+        s = sessionOut(active);
+        merged = true;
+      } else {
+        const mirror = live.find(r => r.status === "pending" && r.host === guest && r.guest === c.name);
+        if (mirror) {
+          // Mutual challenge: accept their invite — one shared game, no fork.
+          const r = await client.query(
+            "UPDATE sessions SET status='active', started_at=now() WHERE id=$1 RETURNING *", [mirror.id]);
+          s = sessionOut(r.rows[0]);
+          merged = true;
+          // My own other outgoing challenges die with the merge (one duel at a time).
+          const exp = await client.query(
+            `UPDATE sessions SET status='expired' WHERE status='pending' AND host=$1 AND id<>$2
+             RETURNING id, host, guest`, [c.name, mirror.id]);
+          expired = exp.rows;
+        } else {
+          // Retire my own stale outgoing challenges, then open the new one.
+          const exp = await client.query(
+            `UPDATE sessions SET status='expired' WHERE status='pending' AND host=$1
+             RETURNING id, host, guest`, [c.name]);
+          expired = exp.rows;
+          const r = await client.query(
+            `INSERT INTO sessions(host, guest, total_questions, status, current_index, question_ids, current_answers, created_at)
+             VALUES($1,$2,$3,'pending',0,$4,'{}',$5) RETURNING *`,
+            [c.name, guest, n, qids.slice(0, n), Date.now()]);
+          s = sessionOut(r.rows[0]);
+        }
+      }
+      await client.query("COMMIT");
+    } catch (e) { try { await client.query("ROLLBACK"); } catch (_) {} throw e; }
+    finally { client.release(); }
+    for (const x of expired) {
+      io.to("session:" + x.id).emit("session:update",
+        { id: x.id, host: x.host, guest: x.guest, status: "expired" });
+      if (x.guest && x.guest !== c.name)
+        io.to("user:" + x.guest).emit("invite:expired", { id: x.id });
+    }
     io.to("session:" + s.id).emit("session:update", s);
-    io.to("user:" + guest).emit("invite:new", s);
-    res.json({ ok: true, session: s });
+    if (!merged) {
+      io.to("user:" + guest).emit("invite:new", s);
+    } else {
+      // Merged: push directly to both users (the joiner may not be in the room yet).
+      io.to("user:" + c.name).emit("session:update", s);
+      io.to("user:" + guest).emit("session:update", s);
+    }
+    res.json({ ok: true, session: s, ...(merged ? { merged: true } : {}) });
   } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
 });
 
@@ -477,9 +559,42 @@ app.patch("/api/sessions/:id", async (req, res) => {
 
     if (action === "accept") {
       if (!isGuest || s.status !== "pending") return res.status(409).json({ ok: false, error: "bad-state" });
-      const r = await pool.query(
-        "UPDATE sessions SET status='active', started_at=now() WHERE id=$1 RETURNING *", [id]);
-      s = sessionOut(r.rows[0]);
+      // Pair-serialized accept: re-check state under the lock, refuse a second
+      // concurrent duel, and retire every other pending duel I'm in.
+      const client = await pool.connect();
+      let expired = [];
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [pairKey(s.host, s.guest)]);
+        const curR = await client.query("SELECT * FROM sessions WHERE id=$1", [id]);
+        const curS = curR.rowCount ? sessionOut(curR.rows[0]) : null;
+        if (!curS || curS.status !== "pending" || curS.guest !== c.name) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ ok: false, error: "bad-state" });
+        }
+        const other = await client.query(
+          "SELECT id FROM sessions WHERE status='active' AND id<>$2 AND (host=$1 OR guest=$1) LIMIT 1",
+          [c.name, id]);
+        if (other.rowCount) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ ok: false, error: "already-active" });
+        }
+        const exp = await client.query(
+          `UPDATE sessions SET status='expired' WHERE status='pending' AND id<>$2
+           AND (host=$1 OR guest=$1) RETURNING id, host, guest`, [c.name, id]);
+        expired = exp.rows;
+        const r = await client.query(
+          "UPDATE sessions SET status='active', started_at=now() WHERE id=$1 RETURNING *", [id]);
+        s = sessionOut(r.rows[0]);
+        await client.query("COMMIT");
+      } catch (e) { try { await client.query("ROLLBACK"); } catch (_) {} throw e; }
+      finally { client.release(); }
+      for (const x of expired) {
+        io.to("session:" + x.id).emit("session:update",
+          { id: x.id, host: x.host, guest: x.guest, status: "expired" });
+        if (x.guest && x.guest !== c.name)
+          io.to("user:" + x.guest).emit("invite:expired", { id: x.id });
+      }
     } else if (action === "decline") {
       if (!isGuest || s.status !== "pending") return res.status(409).json({ ok: false, error: "bad-state" });
       const r = await pool.query(
@@ -550,6 +665,7 @@ const userSockets = new Map(); // name -> Set(socket.id)
 
 io.on("connection", (socket) => {
   sweepExpiredInvites(); // spec: sweep on every new connect, not just the timer
+  sweepAbandonedSessions(Date.now()); // same for abandoned duels
   let who = null;
 
   socket.on("identify", async ({ name, pin } = {}) => {
@@ -642,14 +758,22 @@ io.on("connection", (socket) => {
   socket.on("disconnect", async () => {
     if (!who) return;
     const set = userSockets.get(who);
-    if (set) { set.delete(socket.id); if (set.size) return; userSockets.delete(who); }
-    // Last tab closed -> instant offline (same as Firestore keepalive write).
-    await pool.query("UPDATE status SET last_seen=0 WHERE name=$1", [who]).catch(() => {});
-    emitPresenceCircle(who);
+    if (set) { set.delete(socket.id); if (set.size) return; }
+    // Grace period: a reload/reconnect inside a few seconds restores the set
+    // (see identify) and presence never blinks. Only a real goodbye zeroes it.
+    setTimeout(async () => {
+      try {
+        const cur = userSockets.get(who);
+        if (cur && cur.size) return; // reconnected during grace
+        userSockets.delete(who);
+        await pool.query("UPDATE status SET last_seen=0 WHERE name=$1", [who]).catch(() => {});
+        emitPresenceCircle(who);
+      } catch (e) {}
+    }, 8000);
   });
 });
 
-setInterval(sweepExpiredInvites, 15000);
+setInterval(() => { sweepExpiredInvites(); sweepAbandonedSessions(Date.now()); }, 15000);
 setInterval(async () => { // refresh online/offline edges even when nobody acts
   try {
     const rows = (await pool.query("SELECT name FROM status WHERE last_seen > 0 LIMIT $1",

@@ -13,7 +13,10 @@ window.SATBANK_SYNC = {
 };
 
 // VPS backend (Node + Express + Postgres + Socket.IO) — the USE_BACKEND flag.
-// - url: your VPS origin, e.g. "https://sat.example.com". Empty = disabled.
+// - url: your VPS origin over HTTPS, e.g. "https://51-84-109-28.sslip.io"
+//   (sslip.io resolves to the VPS IP; certbot issues a real cert — no domain
+//   purchase needed). Plain http://IP and ws:// are BLOCKED by browsers on
+//   HTTPS pages (mixed content), so TLS on the VPS is required for direct mode.
 // - enabled: set true at cutover. Kept in this file so rollback = flip + redeploy.
 // Overrides (no redeploy needed for testing):
 // - ?backend=1 forces VPS mode, ?backend=0 forces Firestore mode.
@@ -23,6 +26,6 @@ window.SATBANK_SYNC = {
 // Parallel-run dual-write (answers also forwarded to Firestore, best effort):
 // - localStorage.satbank_dualwrite = "1".
 window.SATBANK_BACKEND = {
-  url: "https://satbank.netlify.app",
+  url: "https://51-84-109-28.sslip.io",
   enabled: true,
 };
