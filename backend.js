@@ -1157,9 +1157,10 @@ async function pickQuestions(n, guests) {
       const solvedSets = await Promise.all(playersToCheck.map(p => solvedSetFor(p)));
       const hasAnyHistory = solvedSets.some(s => s && s.size > 0);
       if (hasAnyHistory) {
+        // Questions that NONE of the players have answered previously
         const fresh = pool.filter(i => {
           const qid = (Net.db[i] || {}).id;
-          return !solvedSets.every(s => s.has(qid));
+          return !solvedSets.some(s => s.has(qid));
         });
         if (fresh.length >= n) {
           pool = fresh;
@@ -1171,7 +1172,7 @@ async function pickQuestions(n, guests) {
             [rest[i], rest[j]] = [rest[j], rest[i]];
           }
           pool = fresh.concat(rest);
-          toast(`Only ${fresh.length} fresh questions left — mixed in ${n - fresh.length} repeats 🔁`);
+          toast(`Only ${fresh.length} fresh questions for all players — mixed in ${n - fresh.length} repeats 🔁`);
         }
       }
     }
