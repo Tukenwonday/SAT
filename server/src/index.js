@@ -425,7 +425,7 @@ app.get("/api/sessions/live", async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
 });
 
-// Duel history: finished/declined sessions with scores derived from the
+// Duel history: finished sessions with scores derived from the
 // attempts ledger (scores live only in client memory mid-duel — the ledger
 // is the permanent record). Scope: me + friends, or all when no friends.
 app.get("/api/sessions/history", async (req, res) => {
@@ -441,10 +441,10 @@ app.get("/api/sessions/history", async (req, res) => {
     }
     const rows = (names
       ? await pool.query(
-          `SELECT * FROM sessions WHERE status IN ('finished','declined')
+          `SELECT * FROM sessions WHERE status = 'finished'
            AND (host = ANY($1) OR guest = ANY($1)) ORDER BY created_at DESC LIMIT 50`, [names])
       : await pool.query(
-          `SELECT * FROM sessions WHERE status IN ('finished','declined')
+          `SELECT * FROM sessions WHERE status = 'finished'
            ORDER BY created_at DESC LIMIT 50`)).rows;
     const ids = rows.map(r => r.id);
     const sc = {};

@@ -803,7 +803,6 @@ function ensureHistCss() {
     "animation:rowin-p1 .35s cubic-bezier(.2,.9,.3,1) backwards}" +
     ".drow:last-child{border-bottom:none}" +
     ".drow:hover{background:#fafbff}" +
-    ".drow.declined{opacity:.55}" +
     ".dmatch{display:flex;align-items:baseline;justify-content:center;gap:20px}" +
     ".dmatch .nm{flex:1;min-width:0;font-size:15.5px;font-weight:800;letter-spacing:-.2px;" +
     "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
@@ -874,19 +873,18 @@ async function renderDuels(box) {
   const r = await api("/api/sessions/history?user=" + encodeURIComponent(Net.name) +
     "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends");
   if (!r || !r.ok) { box.innerHTML = "<p>Couldn't load duels (offline?).</p>"; return; }
-  const list = (r.sessions || []).slice(0, 10); // compact popup: latest 10 only
+  const list = (r.sessions || []).filter(s => s.status === "finished").slice(0, 10); // compact popup: latest 10 finished duels only
   if (!list.length) { box.innerHTML = "<p>No duels yet — send a ⚔️ challenge!</p>"; return; }
   let h = "";
   list.forEach((s, i) => {
     const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
     const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
-    const decided = s.status === "finished";
-    const tie = decided && hs.ok === gs.ok;
-    const lw = decided ? (hs.ok > gs.ok ? "r" : (hs.ok < gs.ok ? "l" : "")) : ""; // dim the loser
-    const mid = decided ? (hs.ok + "–" + gs.ok) : "–";
-    const title = !decided ? `${s.guest} declined` : tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins");
+    const tie = hs.ok === gs.ok;
+    const lw = hs.ok > gs.ok ? "r" : (hs.ok < gs.ok ? "l" : ""); // dim the loser
+    const mid = hs.ok + "–" + gs.ok;
+    const title = tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins");
     const day = String(dayKeyOf(s.createdAt)).slice(5); // MM-DD: the year is noise
-    h += `<div class="drow${decided ? "" : " declined"}" style="animation-delay:${Math.min(i * 40, 240)}ms">` +
+    h += `<div class="drow" style="animation-delay:${Math.min(i * 40, 240)}ms">` +
       `<div class="dmatch"><span class="nm left${lw === "l" ? " dim" : ""}">${esc(s.host)}</span>` +
       `<span class="mid">${mid}</span>` +
       `<span class="nm right${lw === "r" ? " dim" : ""}">${esc(s.guest)}</span></div>` +
