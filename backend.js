@@ -532,8 +532,21 @@ function rosterOrder(people) {
   return people.slice().sort((a, b) =>
     (a.name === Net.name ? -1 : b.name === Net.name ? 1 : String(a.name).localeCompare(String(b.name))));
 }
+function ensureRosterCss() {
+  if (document.getElementById("roster-duel-css")) return;
+  const rst = document.createElement("style");
+  rst.id = "roster-duel-css";
+  rst.textContent =
+    ".roster-row.in-duel .dot{background:#ef4444!important;box-shadow:0 0 0 2px rgba(239,68,68,.35);animation:pulsered 1.4s infinite ease-in-out}" +
+    "@keyframes pulsered{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.25);opacity:.75}}" +
+    ".roster-row .rduel-tag{font-size:10.5px;font-weight:700;color:#e11d48;background:#ffe4e6;" +
+    "border:1px solid #fecdd3;border-radius:999px;padding:1px 6px;margin-left:6px;vertical-align:middle;display:inline-block;letter-spacing:-.2px}";
+  document.head.appendChild(rst);
+}
+
 // One compact button (online count) + dropdown roster. Pills didn't scale past a few users.
 function paintPresence(people, now) {
+  ensureRosterCss();
   Net._people = people;
   const box = $("presence"); if (!box) return;
   if (!$("rosterbtn") || !$("rosterpanel")) {
@@ -543,15 +556,6 @@ function paintPresence(people, now) {
     btn.innerHTML = '<span class="dot"></span><span id="rostercount"></span>';
     const panel = document.createElement("div");
     panel.id = "rosterpanel"; panel.className = "roster-panel"; panel.style.display = "none";
-    if (!document.getElementById("roster-duel-css")) {
-      const rst = document.createElement("style");
-      rst.id = "roster-duel-css";
-      rst.textContent =
-        ".roster-row .rduel{display:none;font-size:10.5px;font-weight:700;color:#e11d48;background:#ffe4e6;" +
-        "border:1px solid #fecdd3;border-radius:999px;padding:1px 7px;margin-left:6px;white-space:nowrap;letter-spacing:-.2px}" +
-        ".roster-row .rduel.in-duel{display:inline-block}";
-      document.head.appendChild(rst);
-    }
     box.appendChild(btn); box.appendChild(panel);
     btn.addEventListener("click", ev => {
       ev.stopPropagation();
@@ -583,18 +587,20 @@ function paintPresence(people, now) {
   }
 }
 function rosterRow(person, online) {
+  const inDuel = !!(person.duel && person.duel.vs);
   const row = document.createElement("div");
-  row.className = "roster-row" + (online ? " on" : "");
+  row.className = "roster-row" + (online ? " on" : "") + (inDuel ? " in-duel" : "");
   row.dataset.name = person.name;
   row.innerHTML = '<span class="dot"></span><span class="rname"></span>' +
-    '<span class="rduel"></span>' +
     '<span class="rtoday"><b class="count-tick">0</b> today</span>';
-  row.querySelector(".rname").textContent = person.name + (person.name === Net.name ? " (you)" : "");
-  if (person.duel && person.duel.vs) {
-    const dSpan = row.querySelector(".rduel");
-    dSpan.className = "rduel in-duel";
-    dSpan.textContent = `⚔️ vs ${person.duel.vs}`;
-    dSpan.title = `${person.name} is in a live duel with ${person.duel.vs}`;
+  const nm = row.querySelector(".rname");
+  nm.textContent = person.name + (person.name === Net.name ? " (you)" : "");
+  if (inDuel) {
+    const badge = document.createElement("span");
+    badge.className = "rduel-tag";
+    badge.textContent = `⚔️ vs ${person.duel.vs}`;
+    nm.appendChild(badge);
+    row.title = `${person.name} is in a live duel against ${person.duel.vs}`;
   }
   const tick = row.querySelector(".count-tick");
   const today = Net.todayCounts[person.name] || 0;
@@ -901,20 +907,43 @@ async function renderDuels(box, quiet) {
   const live = r.live || [];
   const list = (r.sessions || []).filter(s => s.status === "finished").slice(0, 10); // compact popup: latest 10 finished duels only
   if (!live.length && !list.length) { box.innerHTML = "<p>No duels yet — send a ⚔️ challenge!</p>"; return; }
+
+  // Silent in-place update for live scores on auto-refresh: no DOM replacement, no flicker or repeated animations
+  if (quiet && $("live-duels-wrap")) {
+    const liveIds = live.map(s => s.id).join(",");
+    if (box.dataset.liveIds === liveIds) {
+      live.forEach(s => {
+        const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
+        const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
+        const mid = hs.ok + "–" + gs.ok;
+        const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
+        const scoreEl = $("live-sc-" + s.id);
+        if (scoreEl && scoreEl.textContent !== mid) scoreEl.textContent = mid;
+        const subEl = $("live-sub-" + s.id);
+        const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b>`;
+        if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
+      });
+      return;
+    }
+  }
+
+  box.dataset.liveIds = live.map(s => s.id).join(",");
+  const anim = quiet ? ' style="animation:none"' : '';
   let h = "";
   if (live.length) {
-    h += `<div class="dlive-head"><span class="dlive-dot"></span> LIVE DUELS</div>`;
+    h += `<div id="live-duels-wrap"><div class="dlive-head"><span class="dlive-dot"></span> LIVE DUELS</div>`;
     live.forEach(s => {
       const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
       const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
       const mid = hs.ok + "–" + gs.ok;
       const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
-      h += `<div class="drow dlive-row">` +
+      h += `<div class="drow dlive-row" id="live-row-${s.id}"${anim}>` +
         `<div class="dmatch"><span class="nm left">${esc(s.host)}</span>` +
-        `<span class="mid dlive-score">${mid}</span>` +
+        `<span class="mid dlive-score" id="live-sc-${s.id}">${mid}</span>` +
         `<span class="nm right">${esc(s.guest)}</span></div>` +
-        `<div class="dsub">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b></div></div>`;
+        `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b></div></div>`;
     });
+    h += `</div>`;
     if (list.length) {
       h += `<div class="dsep">RECENT COMPLETED</div>`;
     }
@@ -927,7 +956,8 @@ async function renderDuels(box, quiet) {
     const mid = hs.ok + "–" + gs.ok;
     const title = tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins");
     const day = String(dayKeyOf(s.createdAt)).slice(5); // MM-DD: the year is noise
-    h += `<div class="drow" style="animation-delay:${Math.min(i * 40, 240)}ms">` +
+    const rowAnim = quiet ? ' style="animation:none"' : ` style="animation-delay:${Math.min(i * 40, 240)}ms"`;
+    h += `<div class="drow"${rowAnim}>` +
       `<div class="dmatch"><span class="nm left${lw === "l" ? " dim" : ""}">${esc(s.host)}</span>` +
       `<span class="mid">${mid}</span>` +
       `<span class="nm right${lw === "r" ? " dim" : ""}">${esc(s.guest)}</span></div>` +

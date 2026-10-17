@@ -102,16 +102,7 @@ async function emitPresenceCircle(changedUser) {
     const friends = await friendNames(changedUser);
     const audience = friends.length ? [...new Set([changedUser, ...friends])] : null;
     if (!audience) { // closed-group mode: everyone gets the capped global list
-      const rows = (await pool.query(
-        "SELECT s.* FROM status s ORDER BY s.last_seen DESC LIMIT $1", [MAX_PRESENCE])).rows;
-      const now = Date.now();
-      const today = dayKeyOf(now);
-      const list = rows.map(r => ({
-        name: r.name, currentIndex: r.current_index, lastSeen: +r.last_seen,
-        todayCount: r.day_key === today ? r.today_count : 0,
-        dayKey: r.day_key, online: isOnline(r.last_seen, now),
-      }));
-      io.emit("presence:list", list);
+      io.emit("presence:list", await presenceFor(""));
       return;
     }
     for (const m of audience) io.to("user:" + m).emit("presence:list", await presenceFor(m));
