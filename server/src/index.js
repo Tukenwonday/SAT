@@ -25,6 +25,21 @@ if (!process.env.DATABASE_URL) {
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 pool.on("error", err => console.error("pg pool error", err.message));
 
+async function initDb() {
+  try {
+    await pool.query(`
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS players TEXT[];
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS accepted_by TEXT[];
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS forfeited_players TEXT[];
+      UPDATE sessions SET players = ARRAY[host, guest] WHERE players IS NULL AND guest IS NOT NULL;
+      UPDATE sessions SET accepted_by = ARRAY[host, guest] WHERE accepted_by IS NULL AND guest IS NOT NULL;
+    `);
+  } catch (e) {
+    console.error("initDb migration error:", e.message);
+  }
+}
+initDb();
+
 const app = express();
 app.disable("x-powered-by"); // no framework fingerprint header
 app.use(cors({ origin: ORIGINS.includes("*") ? true : ORIGINS }));
@@ -69,19 +84,22 @@ async function friendNames(name) {
 }
 // Scoped presence list for viewer: self + friends, or everyone (capped) when no friends.
 async function presenceFor(viewer) {
-  const friends = await friendNames(viewer);
+  const friends = viewer ? await friendNames(viewer) : [];
   let rows;
   const [statusRes, activeRes] = await Promise.all([
     !friends.length
       ? pool.query("SELECT s.* FROM status s ORDER BY s.last_seen DESC LIMIT $1", [MAX_PRESENCE])
       : pool.query("SELECT s.* FROM status s WHERE s.name = ANY($1)", [[...new Set([viewer, ...friends])]]),
-    pool.query("SELECT id, host, guest FROM sessions WHERE status = 'active'"),
+    pool.query("SELECT id, host, guest, players FROM sessions WHERE status = 'active'"),
   ]);
   rows = statusRes.rows;
   const duelMap = {};
   for (const d of activeRes.rows) {
-    duelMap[d.host] = { id: d.id, vs: d.guest };
-    duelMap[d.guest] = { id: d.id, vs: d.host };
+    const plist = (d.players && d.players.length) ? d.players : [d.host, d.guest].filter(Boolean);
+    for (const p of plist) {
+      const foes = plist.filter(x => x !== p);
+      duelMap[p] = { id: d.id, vs: foes.join(", ") };
+    }
   }
   const now = Date.now();
   const today = dayKeyOf(now);
@@ -109,8 +127,12 @@ async function emitPresenceCircle(changedUser) {
   } catch (e) { console.error("emitPresenceCircle", e.message); }
 }
 function sessionOut(r) {
+  const players = (r.players && r.players.length) ? r.players : [r.host, r.guest].filter(Boolean);
   return {
-    id: r.id, host: r.host, guest: r.guest,
+    id: r.id, host: r.host, guest: r.guest || (players[1] || null),
+    players,
+    acceptedBy: (r.accepted_by && r.accepted_by.length) ? r.accepted_by : (r.status === "active" || r.status === "finished" ? players : [r.host]),
+    forfeitedPlayers: r.forfeited_players || (r.forfeited_by ? [r.forfeited_by] : []),
     totalQuestions: r.total_questions, status: r.status,
     currentIndex: r.current_index, questionIds: r.question_ids || [],
     currentAnswers: r.current_answers || {},
@@ -124,36 +146,35 @@ function sessionOut(r) {
 async function sweepExpiredInvites() {
   try {
     const r = await pool.query(
-      "UPDATE sessions SET status='expired' WHERE status='pending' AND created_at < $1 RETURNING id, host, guest",
+      "UPDATE sessions SET status='expired' WHERE status='pending' AND created_at < $1 RETURNING *",
       [Date.now() - INVITE_TTL_MS]);
-    for (const s of r.rows) {
-      io.to("user:" + s.guest).emit("invite:expired", { id: s.id });
-      io.to("session:" + s.id).emit("session:update",
-        { id: s.id, host: s.host, guest: s.guest, status: "expired" });
+    for (const row of r.rows) {
+      const s = sessionOut(row);
+      for (const p of s.players) {
+        if (p !== s.host) io.to("user:" + p).emit("invite:expired", { id: s.id });
+      }
+      io.to("session:" + s.id).emit("session:update", s);
     }
     return r.rowCount;
   } catch (e) { console.error("sweep", e.message); return 0; }
 }
 
-// Abandoned-duel sweep: an active session where BOTH participants have been
-// silent longer than the presence window is dead (lost forfeit write, double
-// refresh, ...). Mark it forfeited so reloads stop rejoining a ghost
-// countdown. forfeited_by stays NULL = "nobody is here", not "someone quit".
+// Abandoned-duel sweep: an active session where ALL participants have been
+// silent longer than the presence window is dead.
 async function sweepAbandonedSessions(now) {
   try {
     const r = await pool.query(
       `UPDATE sessions SET status='forfeited', finished_at=now()
        WHERE status='active' AND started_at < now() - interval '60 seconds'
        AND NOT EXISTS (SELECT 1 FROM status st
-         WHERE (st.name = sessions.host OR st.name = sessions.guest)
+         WHERE (st.name = sessions.host OR st.name = sessions.guest OR st.name = ANY(COALESCE(sessions.players, '{}')))
          AND st.last_seen > ($1::bigint - 90000))
-       RETURNING id, host, guest`,
+       RETURNING *`,
       [now]);
-    for (const s of r.rows) {
-      io.to("session:" + s.id).emit("session:update",
-        { id: s.id, host: s.host, guest: s.guest, status: "forfeited", forfeitedBy: null });
-      emitPresenceCircle(s.host);
-      if (s.guest) emitPresenceCircle(s.guest);
+    for (const row of r.rows) {
+      const s = sessionOut(row);
+      io.to("session:" + s.id).emit("session:update", s);
+      for (const p of s.players) emitPresenceCircle(p);
     }
     return r.rowCount;
   } catch (e) { console.error("sweep-abandoned", e.message); return 0; }
@@ -405,7 +426,10 @@ app.get("/api/invites/pending", async (req, res) => {
     const c = await checkPin(req.query.user, req.query.pin);
     if (!c.ok) return res.status(c.error === "bad-pin" ? 403 : 404).json({ ok: false, error: c.error });
     const r = await pool.query(
-      "SELECT * FROM sessions WHERE guest=$1 AND status='pending' ORDER BY created_at DESC LIMIT 1",
+      `SELECT * FROM sessions WHERE status='pending'
+       AND ($1 = ANY(players) OR guest=$1) AND host<>$1
+       AND NOT ($1 = ANY(COALESCE(accepted_by, ARRAY[host])))
+       ORDER BY created_at DESC LIMIT 1`,
       [c.name]);
     res.json({ ok: true, invite: r.rowCount ? sessionOut(r.rows[0]) : null });
   } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
@@ -417,7 +441,8 @@ app.get("/api/sessions/live", async (req, res) => {
     const c = await checkPin(req.query.user, req.query.pin);
     if (!c.ok) return res.status(c.error === "bad-pin" ? 403 : 404).json({ ok: false, error: c.error });
     const r = await pool.query(
-      `SELECT * FROM sessions WHERE (host=$1 OR guest=$1) AND status IN ('pending','active')
+      `SELECT * FROM sessions WHERE ($1 = ANY(players) OR host=$1 OR guest=$1)
+       AND status IN ('pending','active')
        ORDER BY created_at DESC LIMIT 1`,
       [c.name]);
     res.json({ ok: true, session: r.rowCount ? sessionOut(r.rows[0]) : null });
@@ -441,14 +466,14 @@ app.get("/api/sessions/history", async (req, res) => {
     const liveRows = (names
       ? await pool.query(
           `SELECT * FROM sessions WHERE status = 'active'
-           AND (host = ANY($1) OR guest = ANY($1)) ORDER BY created_at DESC`, [names])
+           AND (host = ANY($1) OR guest = ANY($1) OR players && $1) ORDER BY created_at DESC`, [names])
       : await pool.query(
           `SELECT * FROM sessions WHERE status = 'active'
            ORDER BY created_at DESC`)).rows;
     const rows = (names
       ? await pool.query(
           `SELECT * FROM sessions WHERE status = 'finished'
-           AND (host = ANY($1) OR guest = ANY($1)) ORDER BY created_at DESC LIMIT 50`, [names])
+           AND (host = ANY($1) OR guest = ANY($1) OR players && $1) ORDER BY created_at DESC LIMIT 50`, [names])
       : await pool.query(
           `SELECT * FROM sessions WHERE status = 'finished'
            ORDER BY created_at DESC LIMIT 50`)).rows;
@@ -463,13 +488,14 @@ app.get("/api/sessions/history", async (req, res) => {
         (sc[a.session_id] = sc[a.session_id] || {})[a.user_name] = { ok: +a.ok, tot: +a.tot };
       }
     }
-    const mapSession = r => ({
-      ...sessionOut(r),
-      scores: {
-        [r.host]: (sc[r.id] && sc[r.id][r.host]) || { ok: 0, tot: 0 },
-        [r.guest]: (sc[r.id] && sc[r.id][r.guest]) || { ok: 0, tot: 0 },
-      },
-    });
+    const mapSession = r => {
+      const s = sessionOut(r);
+      const scores = {};
+      for (const p of s.players) {
+        scores[p] = (sc[r.id] && sc[r.id][p]) || { ok: 0, tot: 0 };
+      }
+      return { ...s, scores };
+    };
     res.json({
       ok: true,
       live: liveRows.map(mapSession),
@@ -495,7 +521,7 @@ app.delete("/api/users/:name", async (req, res) => {
   if (!c.ok) return res.status(c.error === "bad-pin" ? 403 : 404).json({ ok: false, error: c.error });
   await pool.query("DELETE FROM users WHERE name=$1", [c.name]); // cascades status/attempts/friends
   // Keep finished sessions as history; cancel live ones involving this user.
-  await pool.query("UPDATE sessions SET status='expired' WHERE status IN ('pending','active') AND (host=$1 OR guest=$1)",
+  await pool.query("UPDATE sessions SET status='expired' WHERE status IN ('pending','active') AND (host=$1 OR guest=$1 OR $1=ANY(COALESCE(players, '{}')))",
     [c.name]);
   res.json({ ok: true });
 });
@@ -504,70 +530,93 @@ app.post("/api/sessions", async (req, res) => {
   try {
     const c = await checkPin(req.body.host, req.body.pin);
     if (!c.ok) return res.status(403).json({ ok: false, error: c.error });
-    const guest = cleanName(req.body.guest);
+    let guests = [];
+    if (Array.isArray(req.body.guests)) {
+      guests = req.body.guests.map(cleanName).filter(Boolean);
+    } else if (req.body.guest) {
+      guests = [cleanName(req.body.guest)];
+    }
+    guests = [...new Set(guests)].filter(g => g && g !== c.name);
     const qids = Array.isArray(req.body.questionIds) ? req.body.questionIds.map(String) : [];
     const n = +req.body.totalQuestions || qids.length;
-    if (!guest || guest === c.name) return res.status(400).json({ ok: false, error: "bad-guest" });
-    if (!(await getPin(guest))) return res.status(404).json({ ok: false, error: "unknown-guest" });
+    if (!guests.length) return res.status(400).json({ ok: false, error: "bad-guest" });
+    if (guests.length > 2) return res.status(400).json({ ok: false, error: "too-many-guests" });
+    for (const g of guests) {
+      if (!(await getPin(g))) return res.status(404).json({ ok: false, error: "unknown-guest", guest: g });
+    }
     if (!qids.length || qids.length < n) return res.status(400).json({ ok: false, error: "bad-questions" });
-    // Pair-serialized: two simultaneous challenges between the same two users
-    // must merge into ONE session, never two separate games.
+
     const client = await pool.connect();
     let s, merged = false, expired = [];
+    const allPlayers = [c.name, ...guests];
     try {
       await client.query("BEGIN");
-      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [pairKey(c.name, guest)]);
-      const live = (await client.query(
-        `SELECT * FROM sessions WHERE status IN ('pending','active')
-         AND ((host=$1 AND guest=$2) OR (host=$2 AND guest=$1))
-         ORDER BY created_at DESC`, [c.name, guest])).rows;
-      const active = live.find(r => r.status === "active");
-      if (active) {
-        // Already fighting: join the live duel instead of opening a second one.
-        s = sessionOut(active);
-        merged = true;
-      } else {
-        const mirror = live.find(r => r.status === "pending" && r.host === guest && r.guest === c.name);
-        if (mirror) {
-          // Mutual challenge: accept their invite — one shared game, no fork.
-          const r = await client.query(
-            "UPDATE sessions SET status='active', started_at=now() WHERE id=$1 RETURNING *", [mirror.id]);
-          s = sessionOut(r.rows[0]);
+      if (guests.length === 1) {
+        const guest = guests[0];
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [pairKey(c.name, guest)]);
+        const live = (await client.query(
+          `SELECT * FROM sessions WHERE status IN ('pending','active')
+           AND ((host=$1 AND guest=$2) OR (host=$2 AND guest=$1) OR (players @> ARRAY[$1,$2]::text[] AND array_length(players, 1)=2))
+           ORDER BY created_at DESC`, [c.name, guest])).rows;
+        const active = live.find(r => r.status === "active");
+        if (active) {
+          s = sessionOut(active);
           merged = true;
-          // My own other outgoing challenges die with the merge (one duel at a time).
-          const exp = await client.query(
-            `UPDATE sessions SET status='expired' WHERE status='pending' AND host=$1 AND id<>$2
-             RETURNING id, host, guest`, [c.name, mirror.id]);
-          expired = exp.rows;
         } else {
-          // Retire my own stale outgoing challenges, then open the new one.
-          const exp = await client.query(
-            `UPDATE sessions SET status='expired' WHERE status='pending' AND host=$1
-             RETURNING id, host, guest`, [c.name]);
-          expired = exp.rows;
-          const r = await client.query(
-            `INSERT INTO sessions(host, guest, total_questions, status, current_index, question_ids, current_answers, created_at)
-             VALUES($1,$2,$3,'pending',0,$4,'{}',$5) RETURNING *`,
-            [c.name, guest, n, qids.slice(0, n), Date.now()]);
-          s = sessionOut(r.rows[0]);
+          const mirror = live.find(r => r.status === "pending" && r.host === guest && (r.guest === c.name || (r.players && r.players.includes(c.name))));
+          if (mirror) {
+            const r = await client.query(
+              "UPDATE sessions SET status='active', started_at=now(), accepted_by=players WHERE id=$1 RETURNING *", [mirror.id]);
+            s = sessionOut(r.rows[0]);
+            merged = true;
+            const exp = await client.query(
+              `UPDATE sessions SET status='expired' WHERE status='pending' AND host=$1 AND id<>$2
+               RETURNING id, host, guest, players`, [c.name, mirror.id]);
+            expired = exp.rows;
+          } else {
+            const exp = await client.query(
+              `UPDATE sessions SET status='expired' WHERE status='pending' AND host=$1
+               RETURNING id, host, guest, players`, [c.name]);
+            expired = exp.rows;
+            const r = await client.query(
+              `INSERT INTO sessions(host, guest, players, accepted_by, forfeited_players, total_questions, status, current_index, question_ids, current_answers, created_at)
+               VALUES($1,$2,$3,$4,'{}',$5,'pending',0,$6,'{}',$7) RETURNING *`,
+              [c.name, guest, allPlayers, [c.name], n, qids.slice(0, n), Date.now()]);
+            s = sessionOut(r.rows[0]);
+          }
         }
+      } else {
+        // Multi-guest challenge (1v1v1)
+        const exp = await client.query(
+          `UPDATE sessions SET status='expired' WHERE status='pending' AND host=$1
+           RETURNING id, host, guest, players`, [c.name]);
+        expired = exp.rows;
+        const r = await client.query(
+          `INSERT INTO sessions(host, guest, players, accepted_by, forfeited_players, total_questions, status, current_index, question_ids, current_answers, created_at)
+           VALUES($1,$2,$3,$4,'{}',$5,'pending',0,$6,'{}',$7) RETURNING *`,
+          [c.name, guests[0], allPlayers, [c.name], n, qids.slice(0, n), Date.now()]);
+        s = sessionOut(r.rows[0]);
       }
       await client.query("COMMIT");
     } catch (e) { try { await client.query("ROLLBACK"); } catch (_) {} throw e; }
     finally { client.release(); }
     for (const x of expired) {
+      const expPlayers = (x.players && x.players.length) ? x.players : [x.host, x.guest].filter(Boolean);
       io.to("session:" + x.id).emit("session:update",
-        { id: x.id, host: x.host, guest: x.guest, status: "expired" });
-      if (x.guest && x.guest !== c.name)
-        io.to("user:" + x.guest).emit("invite:expired", { id: x.id });
+        { id: x.id, host: x.host, guest: x.guest, players: expPlayers, status: "expired" });
+      for (const p of expPlayers) {
+        if (p !== c.name) io.to("user:" + p).emit("invite:expired", { id: x.id });
+      }
     }
     io.to("session:" + s.id).emit("session:update", s);
     if (!merged) {
-      io.to("user:" + guest).emit("invite:new", s);
+      for (const g of guests) {
+        io.to("user:" + g).emit("invite:new", s);
+      }
     } else {
-      // Merged: push directly to both users (the joiner may not be in the room yet).
-      io.to("user:" + c.name).emit("session:update", s);
-      io.to("user:" + guest).emit("session:update", s);
+      for (const p of allPlayers) {
+        io.to("user:" + p).emit("session:update", s);
+      }
     }
     res.json({ ok: true, session: s, ...(merged ? { merged: true } : {}) });
   } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
@@ -579,7 +628,7 @@ app.get("/api/sessions/:id", async (req, res) => {
     if (!r.rowCount) return res.status(404).json({ ok: false, error: "unknown-session" });
     const s = sessionOut(r.rows[0]);
     const me = cleanName(req.query.user);
-    if (me !== s.host && me !== s.guest) return res.status(403).json({ ok: false, error: "forbidden" });
+    if (!s.players.includes(me)) return res.status(403).json({ ok: false, error: "forbidden" });
     res.json({ ok: true, session: s });
   } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
 });
@@ -593,26 +642,26 @@ app.patch("/api/sessions/:id", async (req, res) => {
     const cur = (await pool.query("SELECT * FROM sessions WHERE id=$1", [id])).rows[0];
     if (!cur) return res.status(404).json({ ok: false, error: "unknown-session" });
     let s = sessionOut(cur);
-    const isHost = c.name === s.host, isGuest = c.name === s.guest;
-    if (!isHost && !isGuest) return res.status(403).json({ ok: false, error: "forbidden" });
+    const isHost = c.name === s.host;
+    const isParticipant = s.players.includes(c.name);
+    if (!isParticipant) return res.status(403).json({ ok: false, error: "forbidden" });
+
+    let todayCount = null;
 
     if (action === "accept") {
-      if (!isGuest || s.status !== "pending") return res.status(409).json({ ok: false, error: "bad-state" });
-      // Pair-serialized accept: re-check state under the lock, refuse a second
-      // concurrent duel, and retire every other pending duel I'm in.
+      if (isHost || s.status !== "pending") return res.status(409).json({ ok: false, error: "bad-state" });
       const client = await pool.connect();
       let expired = [];
       try {
         await client.query("BEGIN");
-        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [pairKey(s.host, s.guest)]);
         const curR = await client.query("SELECT * FROM sessions WHERE id=$1", [id]);
         const curS = curR.rowCount ? sessionOut(curR.rows[0]) : null;
-        if (!curS || curS.status !== "pending" || curS.guest !== c.name) {
+        if (!curS || curS.status !== "pending" || !curS.players.includes(c.name)) {
           await client.query("ROLLBACK");
           return res.status(409).json({ ok: false, error: "bad-state" });
         }
         const other = await client.query(
-          "SELECT id FROM sessions WHERE status='active' AND id<>$2 AND (host=$1 OR guest=$1) LIMIT 1",
+          "SELECT id FROM sessions WHERE status='active' AND id<>$2 AND (host=$1 OR guest=$1 OR $1=ANY(players)) LIMIT 1",
           [c.name, id]);
         if (other.rowCount) {
           await client.query("ROLLBACK");
@@ -620,37 +669,78 @@ app.patch("/api/sessions/:id", async (req, res) => {
         }
         const exp = await client.query(
           `UPDATE sessions SET status='expired' WHERE status='pending' AND id<>$2
-           AND (host=$1 OR guest=$1) RETURNING id, host, guest`, [c.name, id]);
+           AND (host=$1 OR guest=$1 OR $1=ANY(players)) RETURNING id, host, guest, players`, [c.name, id]);
         expired = exp.rows;
-        const r = await client.query(
-          "UPDATE sessions SET status='active', started_at=now() WHERE id=$1 RETURNING *", [id]);
+
+        let acceptedBy = Array.isArray(curS.acceptedBy) ? [...curS.acceptedBy] : [curS.host];
+        if (!acceptedBy.includes(c.name)) acceptedBy.push(c.name);
+
+        const allAccepted = curS.players.every(p => acceptedBy.includes(p));
+        let r;
+        if (allAccepted) {
+          r = await client.query(
+            "UPDATE sessions SET status='active', started_at=now(), accepted_by=$2 WHERE id=$1 RETURNING *",
+            [id, acceptedBy]);
+        } else {
+          r = await client.query(
+            "UPDATE sessions SET accepted_by=$2 WHERE id=$1 RETURNING *",
+            [id, acceptedBy]);
+        }
         s = sessionOut(r.rows[0]);
         await client.query("COMMIT");
       } catch (e) { try { await client.query("ROLLBACK"); } catch (_) {} throw e; }
       finally { client.release(); }
+
       for (const x of expired) {
+        const expPlayers = (x.players && x.players.length) ? x.players : [x.host, x.guest].filter(Boolean);
         io.to("session:" + x.id).emit("session:update",
-          { id: x.id, host: x.host, guest: x.guest, status: "expired" });
-        if (x.guest && x.guest !== c.name)
-          io.to("user:" + x.guest).emit("invite:expired", { id: x.id });
+          { id: x.id, host: x.host, guest: x.guest, players: expPlayers, status: "expired" });
+        for (const p of expPlayers) {
+          if (p !== c.name) io.to("user:" + p).emit("invite:expired", { id: x.id });
+        }
       }
     } else if (action === "decline") {
-      if (!isGuest || s.status !== "pending") return res.status(409).json({ ok: false, error: "bad-state" });
+      if (isHost || s.status !== "pending") return res.status(409).json({ ok: false, error: "bad-state" });
       const r = await pool.query(
         "UPDATE sessions SET status='declined', finished_at=now() WHERE id=$1 RETURNING *", [id]);
       s = sessionOut(r.rows[0]);
-      io.to("user:" + s.host).emit("invite:declined", { id: s.id, by: c.name });
+      for (const p of s.players) {
+        if (p !== c.name) {
+          io.to("user:" + p).emit("invite:declined", { id: s.id, by: c.name });
+          io.to("user:" + p).emit("invite:expired", { id: s.id });
+        }
+      }
     } else if (action === "forfeit") {
-      // Explicit exit or unload mid-duel. Works from pending (cancel) or active.
-      // Double-forfeit (both sides at once): loser gets bad-state, client treats as benign.
       if (s.status !== "pending" && s.status !== "active")
         return res.status(409).json({ ok: false, error: "bad-state" });
-      const r = await pool.query(
-        "UPDATE sessions SET status='forfeited', forfeited_by=$2, finished_at=now() WHERE id=$1 RETURNING *",
-        [id, c.name]);
-      s = sessionOut(r.rows[0]);
+
+      if (s.status === "pending") {
+        const r = await pool.query(
+          "UPDATE sessions SET status='expired', finished_at=now() WHERE id=$1 RETURNING *", [id]);
+        s = sessionOut(r.rows[0]);
+        for (const p of s.players) {
+          if (p !== c.name) io.to("user:" + p).emit("invite:expired", { id: s.id });
+        }
+      } else {
+        let forfeited = Array.isArray(s.forfeitedPlayers) ? [...s.forfeitedPlayers] : [];
+        if (!forfeited.includes(c.name)) forfeited.push(c.name);
+        const remaining = s.players.filter(p => !forfeited.includes(p));
+
+        let r;
+        if (remaining.length <= 1) {
+          r = await pool.query(
+            "UPDATE sessions SET status='forfeited', forfeited_by=$2, forfeited_players=$3, finished_at=now() WHERE id=$1 RETURNING *",
+            [id, c.name, forfeited]);
+        } else {
+          r = await pool.query(
+            "UPDATE sessions SET forfeited_players=$2 WHERE id=$1 RETURNING *",
+            [id, forfeited]);
+        }
+        s = sessionOut(r.rows[0]);
+      }
     } else if (action === "answer") {
       if (s.status !== "active") return res.status(409).json({ ok: false, error: "bad-state" });
+      if ((s.forfeitedPlayers || []).includes(c.name)) return res.status(409).json({ ok: false, error: "forfeited" });
       const sel = String(req.body.selected || "");
       const qi = +req.body.questionIndex || 0;
       if (!/^[A-D]$/.test(sel)) return res.status(400).json({ ok: false, error: "bad-answer" });
@@ -662,14 +752,12 @@ app.patch("/api/sessions/:id", async (req, res) => {
           is_correct: !!req.body.is_correct, timeMs: +req.body.timeMs || 0,
         },
       };
-      // ⚠️ Duel race: serialize — second writer for the same question loses.
       const upd = await pool.query(
         `UPDATE sessions SET current_answers = current_answers || $2::jsonb
          WHERE id=$1 AND NOT (current_answers ? $3) RETURNING *`,
         [id, JSON.stringify(entry), c.name]);
       if (!upd.rowCount) return res.json({ ok: false, error: "duplicate" });
       s = sessionOut(upd.rows[0]);
-      // Duel answers also count in the ledger (same source as solo answers).
       const now = Date.now(), today = dayKeyOf(now);
       await pool.query(
         "INSERT INTO attempts(user_name, question_id, selected, is_correct, session_id) VALUES($1,$2,$3,$4,$5)",
@@ -679,7 +767,7 @@ app.patch("/api/sessions/:id", async (req, res) => {
          day_key=$2, last_seen=$3 WHERE name=$1`, [c.name, today, now]);
       const tc = (await pool.query("SELECT today_count FROM status WHERE name=$1", [c.name])).rows[0];
       todayCount = tc ? tc.today_count : 0;
-      emitPresenceCircle(c.name); // duel answers push today-count instantly too
+      emitPresenceCircle(c.name);
     } else if (action === "advance") {
       if (!isHost || s.status !== "active") return res.status(409).json({ ok: false, error: "bad-state" });
       const ni = Math.max(0, +req.body.currentIndex || 0);
@@ -696,8 +784,7 @@ app.patch("/api/sessions/:id", async (req, res) => {
     }
     io.to("session:" + s.id).emit("session:update", s);
     if (action === "accept" || action === "finish" || action === "forfeit") {
-      emitPresenceCircle(s.host);
-      if (s.guest) emitPresenceCircle(s.guest);
+      for (const p of s.players) emitPresenceCircle(p);
     }
     res.json({ ok: true, session: s, ...(typeof todayCount === "number" ? { todayCount } : {}) });
   } catch (e) { console.error("patch session", e.message); res.status(500).json({ ok: false, error: "server" }); }
@@ -718,7 +805,7 @@ async function checkChatSend(sessionId, actor, pin, text) {
   if (!cur) return { ok: false, error: "unknown-session" };
   const s = sessionOut(cur);
   if (s.status !== "active") return { ok: false, error: "bad-state" };
-  if (c.name !== s.host && c.name !== s.guest) return { ok: false, error: "forbidden" };
+  if (!s.players.includes(c.name)) return { ok: false, error: "forbidden" };
   if (_chatLastMs.size > 1000) _chatLastMs.clear();
   const last = _chatLastMs.get(c.name) || 0;
   if (Date.now() - last < CHAT_MIN_INTERVAL_MS) return { ok: false, error: "too-fast" };
@@ -770,11 +857,11 @@ io.on("connection", (socket) => {
       socket.emit("presence:list", await presenceFor(who));
       // Re-deliver latest pending invite + rejoin any live session after reload.
       const inv = (await pool.query(
-        "SELECT * FROM sessions WHERE guest=$1 AND status='pending' ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM sessions WHERE ($1=ANY(COALESCE(players, '{}')) OR guest=$1) AND host<>$1 AND status='pending' ORDER BY created_at DESC LIMIT 1",
         [who])).rows[0];
       if (inv) socket.emit("invite:new", sessionOut(inv));
       const live = (await pool.query(
-        `SELECT * FROM sessions WHERE (host=$1 OR guest=$1) AND status IN ('pending','active')
+        `SELECT * FROM sessions WHERE (host=$1 OR guest=$1 OR $1=ANY(COALESCE(players, '{}'))) AND status IN ('pending','active')
          ORDER BY created_at DESC LIMIT 1`, [who])).rows[0];
       if (live) { const s = sessionOut(live); socket.join("session:" + s.id); socket.emit("session:update", s); }
       emitPresenceCircle(who);
@@ -810,7 +897,8 @@ io.on("connection", (socket) => {
     let s = sessionOut(cur);
     let todayCount = null;
       if (s.status !== "active") return ack && ack({ ok: false, error: "bad-state" });
-      if (c.name !== s.host && c.name !== s.guest) return ack && ack({ ok: false, error: "forbidden" });
+      if (!s.players.includes(c.name)) return ack && ack({ ok: false, error: "forbidden" });
+      if ((s.forfeitedPlayers || []).includes(c.name)) return ack && ack({ ok: false, error: "forfeited" });
       const sel = String(msg.selected || "");
       const qi = +msg.questionIndex || 0;
       const qid = (s.questionIds || [])[qi];

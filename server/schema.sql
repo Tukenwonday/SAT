@@ -57,6 +57,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   started_at      TIMESTAMPTZ NULL,
   finished_at     TIMESTAMPTZ NULL,
   forfeited_by    TEXT NULL,
+  players         TEXT[] NULL,
+  accepted_by     TEXT[] NULL,
+  forfeited_players TEXT[] NULL,
   CHECK (host <> guest)
 );
 CREATE INDEX IF NOT EXISTS sessions_guest_status_idx ON sessions(guest, status, created_at DESC);

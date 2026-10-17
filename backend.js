@@ -913,15 +913,23 @@ async function renderDuels(box, quiet) {
     const liveIds = live.map(s => s.id).join(",");
     if (box.dataset.liveIds === liveIds) {
       live.forEach(s => {
-        const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
-        const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
-        const mid = hs.ok + "–" + gs.ok;
+        const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
         const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
         const scoreEl = $("live-sc-" + s.id);
-        if (scoreEl && scoreEl.textContent !== mid) scoreEl.textContent = mid;
         const subEl = $("live-sub-" + s.id);
-        const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b>`;
-        if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
+        if (players.length > 2) {
+          const mid = players.map(p => `${esc(p)}: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
+          if (scoreEl && scoreEl.textContent !== mid) scoreEl.textContent = mid;
+          const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">3-Way Live ⚔️</b>`;
+          if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
+        } else {
+          const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
+          const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
+          const mid = hs.ok + "–" + gs.ok;
+          if (scoreEl && scoreEl.textContent !== mid) scoreEl.textContent = mid;
+          const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b>`;
+          if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
+        }
       });
       return;
     }
@@ -933,15 +941,24 @@ async function renderDuels(box, quiet) {
   if (live.length) {
     h += `<div id="live-duels-wrap"><div class="dlive-head"><span class="dlive-dot"></span> LIVE DUELS</div>`;
     live.forEach(s => {
-      const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
-      const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
-      const mid = hs.ok + "–" + gs.ok;
+      const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
       const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
-      h += `<div class="drow dlive-row" id="live-row-${s.id}"${anim}>` +
-        `<div class="dmatch"><span class="nm left">${esc(s.host)}</span>` +
-        `<span class="mid dlive-score" id="live-sc-${s.id}">${mid}</span>` +
-        `<span class="nm right">${esc(s.guest)}</span></div>` +
-        `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b></div></div>`;
+      if (players.length > 2) {
+        const mid = players.map(p => `${esc(p)}: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
+        h += `<div class="drow dlive-row" id="live-row-${s.id}"${anim}>` +
+          `<div class="dmatch" style="justify-content:center;gap:10px;font-size:14px;font-weight:700">` +
+          `<span class="dlive-score" id="live-sc-${s.id}">${mid}</span></div>` +
+          `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">3-Way Live ⚔️</b></div></div>`;
+      } else {
+        const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
+        const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
+        const mid = hs.ok + "–" + gs.ok;
+        h += `<div class="drow dlive-row" id="live-row-${s.id}"${anim}>` +
+          `<div class="dmatch"><span class="nm left">${esc(s.host)}</span>` +
+          `<span class="mid dlive-score" id="live-sc-${s.id}">${mid}</span>` +
+          `<span class="nm right">${esc(s.guest)}</span></div>` +
+          `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b></div></div>`;
+      }
     });
     h += `</div>`;
     if (list.length) {
@@ -949,20 +966,35 @@ async function renderDuels(box, quiet) {
     }
   }
   list.forEach((s, i) => {
-    const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
-    const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
-    const tie = hs.ok === gs.ok;
-    const lw = hs.ok > gs.ok ? "r" : (hs.ok < gs.ok ? "l" : ""); // dim the loser
-    const mid = hs.ok + "–" + gs.ok;
-    const title = tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins");
+    const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
     const day = String(dayKeyOf(s.createdAt)).slice(5); // MM-DD: the year is noise
     const rowAnim = quiet ? ' style="animation:none"' : ` style="animation-delay:${Math.min(i * 40, 240)}ms"`;
-    h += `<div class="drow"${rowAnim}>` +
-      `<div class="dmatch"><span class="nm left${lw === "l" ? " dim" : ""}">${esc(s.host)}</span>` +
-      `<span class="mid">${mid}</span>` +
-      `<span class="nm right${lw === "r" ? " dim" : ""}">${esc(s.guest)}</span></div>` +
-      `<div class="dsub">${esc(day)}</div>` +
-      `<div class="dsub2">${s.totalQuestions} questions · ${esc(title)}</div></div>`;
+    if (players.length > 2) {
+      const sorted = [...players].sort((a, b) => ((s.scores && s.scores[b]) ? s.scores[b].ok : 0) - ((s.scores && s.scores[a]) ? s.scores[a].ok : 0));
+      const topScore = (s.scores && s.scores[sorted[0]]) ? s.scores[sorted[0]].ok : 0;
+      const winners = sorted.filter(p => ((s.scores && s.scores[p]) ? s.scores[p].ok : 0) === topScore);
+      const tie = winners.length > 1;
+      const title = tie ? `Tie (${winners.join(" & ")})` : `${sorted[0]} wins`;
+      const scoresDisplay = sorted.map(p => `${esc(p)}: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
+      h += `<div class="drow"${rowAnim}>` +
+        `<div class="dmatch" style="justify-content:center;gap:10px;font-size:13.5px;font-weight:700">` +
+        `<span>${scoresDisplay}</span></div>` +
+        `<div class="dsub">${esc(day)}</div>` +
+        `<div class="dsub2">${s.totalQuestions} questions · ${esc(title)} · 3-Way Battle</div></div>`;
+    } else {
+      const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
+      const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
+      const tie = hs.ok === gs.ok;
+      const lw = hs.ok > gs.ok ? "r" : (hs.ok < gs.ok ? "l" : ""); // dim the loser
+      const mid = hs.ok + "–" + gs.ok;
+      const title = tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins");
+      h += `<div class="drow"${rowAnim}>` +
+        `<div class="dmatch"><span class="nm left${lw === "l" ? " dim" : ""}">${esc(s.host)}</span>` +
+        `<span class="mid">${mid}</span>` +
+        `<span class="nm right${lw === "r" ? " dim" : ""}">${esc(s.guest)}</span></div>` +
+        `<div class="dsub">${esc(day)}</div>` +
+        `<div class="dsub2">${s.totalQuestions} questions · ${esc(title)}</div></div>`;
+    }
   });
   box.innerHTML = h;
 
@@ -1025,41 +1057,78 @@ Net.openChallenge = async function (preset) {
   const list = $("opp-list");
   const hid = $("chall-guest");
   const send = $("challsend");
+  Net._selectedGuests = new Set();
+
+  const updateSelectionUI = () => {
+    const selArr = Array.from(Net._selectedGuests);
+    if (hid) hid.value = selArr[0] || "";
+    if (list) {
+      list.querySelectorAll(".opp-card").forEach(x => {
+        x.classList.toggle("sel", Net._selectedGuests.has(x.dataset.name));
+      });
+    }
+    if (send) {
+      send.disabled = selArr.length === 0;
+      if (selArr.length === 0) {
+        send.textContent = "Select an opponent";
+      } else if (selArr.length === 1) {
+        send.textContent = "Send 1v1 Duel ⚔️";
+      } else {
+        send.textContent = "Send 1v1v1 Battle (3-Way) ⚔️";
+      }
+    }
+  };
+
+  const togglePick = (n) => {
+    if (!n) return;
+    if (Net._selectedGuests.has(n)) {
+      if (Net._selectedGuests.size > 1) {
+        Net._selectedGuests.delete(n);
+      }
+    } else {
+      if (Net._selectedGuests.size >= 2) {
+        toast("Up to 2 opponents can be selected for 1v1v1 ⚔️");
+        return;
+      }
+      Net._selectedGuests.add(n);
+    }
+    updateSelectionUI();
+  };
+
   const paint = (online) => {
     if (!list) return;
     const others = (online || []).filter(n => n && n !== Net.name);
     const known = [...new Set(others)].sort();
     if (preset && !known.includes(preset)) known.unshift(preset);
     list.innerHTML = "";
-    const pick = (n) => {
-      if (hid) hid.value = n || "";
-      list.querySelectorAll(".opp-card").forEach(x => x.classList.toggle("sel", x.dataset.name === n));
-    };
     if (!known.length) {
       const d = document.createElement("div");
       d.className = "opp-empty";
       d.innerHTML = "No one online right now.<br>Ask them to open the app, then try again.";
       list.appendChild(d);
-      if (hid) hid.value = "";
-      if (send) send.disabled = true;
+      Net._selectedGuests.clear();
+      updateSelectionUI();
       return;
     }
     // Default pick: explicit preset, else last opponent if present, else first.
     const def = (preset && known.includes(preset)) ? preset
       : (Net.friend && known.includes(Net.friend)) ? Net.friend : known[0];
+    if (def && (!Net._selectedGuests.size || !known.some(k => Net._selectedGuests.has(k)))) {
+      Net._selectedGuests.clear();
+      Net._selectedGuests.add(def);
+    }
     known.forEach(n => {
       const b = document.createElement("button");
       b.type = "button";
-      b.className = "opp-card";
+      b.className = "opp-card" + (Net._selectedGuests.has(n) ? " sel" : "");
       b.dataset.name = n;
       b.innerHTML = '<span class="ava">' + esc(n.charAt(0).toUpperCase()) + '</span>' +
         '<span class="who"><b>' + esc(n) + '</b><span>online</span></span>' +
         '<span class="tick">✓</span>';
-      b.addEventListener("click", () => { pick(n); if (FX()) FX().sound("tick"); });
+      b.addEventListener("click", () => { togglePick(n); if (FX()) FX().sound("tick"); });
       list.appendChild(b);
     });
-    pick(def);
-    if (send) send.disabled = false;
+    updateSelectionUI();
   };
   if (list) {
     const now = Date.now();
@@ -1074,7 +1143,8 @@ Net.openChallenge = async function (preset) {
   if (r && r.ok) paint(r.online);
 };
 
-async function pickQuestions(n, guest) {
+async function pickQuestions(n, guests) {
+  const gList = (Array.isArray(guests) ? guests : [guests]).filter(Boolean);
   let pool;
   try {
     const F = App().F, DB = App().DB;
@@ -1082,12 +1152,14 @@ async function pickQuestions(n, guest) {
     pool = (filtered ? F.slice() : DB.map((_, i) => i));
   } catch (e) { pool = Net.db.map((_, i) => i); }
   try {
-    if (guest && guest !== Net.name) {
-      const [mine, theirs] = await Promise.all([solvedSetFor(Net.name), solvedSetFor(guest)]);
-      if (mine.size || theirs.size) {
+    const playersToCheck = [Net.name, ...gList].filter(Boolean);
+    if (playersToCheck.length > 1) {
+      const solvedSets = await Promise.all(playersToCheck.map(p => solvedSetFor(p)));
+      const hasAnyHistory = solvedSets.some(s => s && s.size > 0);
+      if (hasAnyHistory) {
         const fresh = pool.filter(i => {
           const qid = (Net.db[i] || {}).id;
-          return !(mine.has(qid) && theirs.has(qid));
+          return !solvedSets.every(s => s.has(qid));
         });
         if (fresh.length >= n) {
           pool = fresh;
@@ -1113,15 +1185,21 @@ async function pickQuestions(n, guest) {
 
 async function createChallenge() {
   if (!Net.name) { toast("Save your name first 👇"); return; }
-  let guest = otherName();
-  if (!guest || guest === Net.name) { toast("No one is online to challenge right now."); return; }
-  if (!isPersonOnline(guest)) {
-    // Presence may lag the picker; re-check server-side before refusing.
-    const r = await api("/api/users/online?user=" + encodeURIComponent(Net.name) +
-      "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends");
-    if (!r || !r.ok || !(r.online || []).includes(guest)) {
-      toast(`${guest} is offline — you can only challenge online players ⚪`);
-      return;
+  const guests = Net._selectedGuests && Net._selectedGuests.size
+    ? Array.from(Net._selectedGuests)
+    : [otherName()].filter(Boolean);
+  if (!guests.length || guests.every(g => g === Net.name)) {
+    toast("Select at least one opponent to challenge.");
+    return;
+  }
+  for (const g of guests) {
+    if (!isPersonOnline(g)) {
+      const r = await api("/api/users/online?user=" + encodeURIComponent(Net.name) +
+        "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends");
+      if (!r || !r.ok || !(r.online || []).includes(g)) {
+        toast(`${g} is offline — you can only challenge online players ⚪`);
+        return;
+      }
     }
   }
   const n = Net.challN || 10;
@@ -1129,41 +1207,40 @@ async function createChallenge() {
   if (Net._creating) return;
   Net._creating = true;
   try {
-    const qids = await pickQuestions(n, guest);
+    const qids = await pickQuestions(n, guests);
     if (qids.length < n) { toast("Not enough questions in the current filter."); return; }
     const r = await api("/api/sessions", {
       method: "POST",
-      body: { host: Net.name, pin: getPin(Net.name), guest, totalQuestions: n, questionIds: qids },
+      body: { host: Net.name, pin: getPin(Net.name), guests, guest: guests[0], totalQuestions: n, questionIds: qids },
     });
     if (!r || !r.ok) {
       toast(r && r.error === "unknown-guest"
-        ? guest + " hasn't signed in on the backend yet." : "Couldn't send challenge (offline?).");
+        ? (r.guest || guests.join(", ")) + " hasn't signed in on the backend yet." : "Couldn't send challenge (offline?).");
       return;
     }
     $("ov-challenge").classList.remove("open");
     if (r.merged) {
-      toast("Joined " + guest + "'s challenge ⚔️");
+      toast("Joined " + guests[0] + "'s challenge ⚔️");
     } else {
-      toast("Challenge sent to " + guest + " ⚔️");
-      sayChall("Waiting for " + guest + " to accept…");
+      if (guests.length === 1) {
+        toast("Challenge sent to " + guests[0] + " ⚔️");
+        sayChall("Waiting for " + guests[0] + " to accept…");
+      } else {
+        toast(`1v1v1 Challenge sent to ${guests.join(" & ")} ⚔️`);
+        sayChall(`Waiting for ${guests.join(" & ")} to accept…`);
+      }
     }
     if (FX()) FX().sound("alert");
     watchSession(r.session.id);
-    // Host-side timeout (server sweep expires independently; this just unblocks UI).
-    // Re-check the server first: the accept may have landed while we waited, in
-    // which case we join the battle instead of silently abandoning a live duel.
-    // Silent clear, never a forfeit confirm: nobody accepted, nothing to forfeit.
     setTimeout(async () => {
       if (Net.session && Net.session.id === r.session.id && Net.session.status === "pending" &&
           Net._watching === r.session.id) {
         await refreshSession(r.session.id);
         const cur = Net.session;
         if (cur && cur.id === r.session.id && cur.status === "pending") {
-          toast("Challenge timed out — " + guest + " didn't respond ⏳");
+          toast("Challenge timed out — opponents didn't respond ⏳");
           clearChallengeState();
         }
-        // Active → onSession already moved us into the battle.
-        // Expired/declined → onSession already cleared us.
       }
     }, 95000);
   } finally {
@@ -1174,7 +1251,12 @@ async function createChallenge() {
 let pendingInvite = null;
 function showInvite(id, s) {
   pendingInvite = { id, ...s, at: Date.now() };
-  $("invite-from").textContent = s.host || "Friend";
+  const others = (s.players || []).filter(p => p !== Net.name && p !== s.host);
+  if (others.length > 0) {
+    $("invite-from").textContent = s.host + " (3-way with " + others.join(", ") + ")";
+  } else {
+    $("invite-from").textContent = s.host || "Friend";
+  }
   $("invite-n").textContent = s.totalQuestions || (s.questionIds || []).length;
   $("invitebanner").classList.add("show");
   if (FX()) FX().sound("alert");
@@ -1286,20 +1368,37 @@ function onSession(s) {
     return;
   }
   if (s.status === "forfeited") {
-    const foe = s.forfeitedBy && s.forfeitedBy !== Net.name ? s.forfeitedBy
-      : (s.host === Net.name ? s.guest : s.host);
+    const foes = (s.players || [s.host, s.guest]).filter(p => p !== Net.name);
     if (was === "active" || was === "pending") {
-      // forfeitedBy null = abandoned-session sweep, not someone quitting.
-      toast(s.forfeitedBy ? `${foe} forfeited — match over 🏳` : "Match abandoned — opponent gone 🏳");
-      showForfeitEnd(s, foe);
+      toast(s.forfeitedBy ? `${s.forfeitedBy} forfeited — match over 🏳` : "Match abandoned — opponent gone 🏳");
+      showForfeitEnd(s, foes.join(", "));
     }
     clearChallengeState();
     return;
   }
+  // Check if someone forfeited mid-match while session continues
+  if (s.status === "active" && s.forfeitedPlayers && s.forfeitedPlayers.length) {
+    if (!Net._announcedForfeits) Net._announcedForfeits = new Set();
+    s.forfeitedPlayers.forEach(p => {
+      if (!Net._announcedForfeits.has(p)) {
+        Net._announcedForfeits.add(p);
+        toast(`${p} forfeited! The battle continues ⚔️`);
+      }
+    });
+  }
   if (s.status === "active" && was !== "active") startCountdown(s);
   else if (s.status === "active") syncBattle(s);
   else if (s.status === "finished") finishSession(s);
-  else if (s.status === "pending") sayChall("Waiting for opponent…");
+  else if (s.status === "pending") {
+    const players = s.players || [s.host, s.guest];
+    if (players.length > 2) {
+      const accepted = s.acceptedBy || [s.host];
+      const waiting = players.filter(p => !accepted.includes(p));
+      sayChall(waiting.length ? `Waiting for ${waiting.join(", ")}…` : "Starting duel…");
+    } else {
+      sayChall("Waiting for opponent…");
+    }
+  }
 }
 
 function sayChall(t) {
@@ -1319,6 +1418,13 @@ function startCountdown(s) {
   const ov = $("countdown"), num = $("countnum");
   ov.classList.add("show");
   Net.myScore = 0; Net.frScore = 0; Net.myTimes = []; Net.frTimes = [];
+  Net.playerScores = {};
+  Net.playerTimes = {};
+  Net._announcedForfeits = new Set();
+  (s.players || [s.host, s.guest]).forEach(p => {
+    Net.playerScores[p] = 0;
+    Net.playerTimes[p] = [];
+  });
   Net.revealed = false;
   Net._bIdx = 0;
   Net.qStartMs = Date.now();
@@ -1380,28 +1486,47 @@ function syncBattle(s) {
   paintBattle(s);
   const ca = s.currentAnswers || {};
   const mAns = ca[Net.name];
-  const foeName = s.host === Net.name ? s.guest : s.host;
-  const fAns = ca[foeName];
   if (mAns && !Net.revealed) lockWaiting(true);
-  if (mAns && fAns && !Net.revealed && (mAns.questionIndex === undefined || mAns.questionIndex === i)) {
-    revealDuel(s, mAns, fAns);
+
+  const players = s.players || [s.host, s.guest];
+  const forfeited = s.forfeitedPlayers || [];
+  const activePlayers = players.filter(p => !forfeited.includes(p));
+  const allAnswered = activePlayers.length > 0 && activePlayers.every(p => {
+    const ans = ca[p];
+    return ans && (ans.questionIndex === undefined || ans.questionIndex === i);
+  });
+  if (allAnswered && !Net.revealed) {
+    revealDuel(s, ca);
   }
 }
 
 function paintBattle(s) {
   const i = s.currentIndex || 0, n = s.totalQuestions || (s.questionIds || []).length;
-  sayChall(`⚔️ Q${Math.min(i + 1, n)}/${n} vs ${s.host === Net.name ? s.guest : s.host}`);
+  const players = s.players || [s.host, s.guest];
   const pill = $("scorepill");
-  if (pill) {
-    pill.style.display = "";
-    const prev = pill.dataset.sc || "0-0";
-    pill.dataset.sc = Net.myScore + "-" + Net.frScore;
-    pill.textContent = `You ${Net.myScore} – ${Net.frScore} ${s.host === Net.name ? s.guest : s.host}`;
-    if (prev !== pill.dataset.sc && FX()) FX().sound("tada");
+  if (players.length <= 2) {
+    const foe = s.host === Net.name ? s.guest : s.host;
+    sayChall(`⚔️ Q${Math.min(i + 1, n)}/${n} vs ${foe}`);
+    if (pill) {
+      pill.style.display = "";
+      const prev = pill.dataset.sc || "0-0";
+      pill.dataset.sc = Net.myScore + "-" + Net.frScore;
+      pill.textContent = `You ${Net.myScore} – ${Net.frScore} ${foe}`;
+      if (prev !== pill.dataset.sc && FX()) FX().sound("tada");
+    }
+  } else {
+    sayChall(`⚔️ Q${Math.min(i + 1, n)}/${n} · 3-Way Battle`);
+    if (pill) {
+      pill.style.display = "";
+      const scoreStr = players.map(p => (p === Net.name ? "You" : p) + " " + (Net.playerScores ? (Net.playerScores[p] || 0) : 0)).join(" · ");
+      const prev = pill.dataset.sc || "";
+      pill.dataset.sc = scoreStr;
+      pill.textContent = scoreStr;
+      if (prev && prev !== scoreStr && FX()) FX().sound("tada");
+    }
   }
   const cb = $("challpill");
   if (cb) cb.style.display = "none";
-  // Duel-only chat button takes Next's slot (Next returns on match end).
   try {
     ensureChatDom();
     const nx = $("nextbtn"); if (nx) nx.style.display = "none";
@@ -1458,7 +1583,26 @@ Net.decorate = function () {
   const shouldLock = !!(reviewing || rev || pick || echoed);
   document.querySelectorAll("#opts .opt").forEach(o => o.classList.toggle("locked", shouldLock));
   if (rev) {
-    if (rev.foe !== rev.mine) {
+    const players = s.players || [s.host, s.guest];
+    if (rev.ca) {
+      players.forEach(p => {
+        if (p === Net.name) return;
+        const ans = rev.ca[p];
+        if (ans && ans.selected && ans.selected !== rev.mine) {
+          const foeEl = document.querySelector('#opts .opt[data-k="' + ans.selected + '"]');
+          if (foeEl) {
+            foeEl.classList.add("friendpick");
+            if (!foeEl.querySelector('.foetag[data-p="' + p + '"]')) {
+              const t = document.createElement("span");
+              t.className = "foetag";
+              t.dataset.p = p;
+              t.textContent = "👤 " + p;
+              foeEl.appendChild(t);
+            }
+          }
+        }
+      });
+    } else if (rev.foe && rev.foe !== rev.mine) {
       const foeEl = document.querySelector('#opts .opt[data-k="' + rev.foe + '"]');
       if (foeEl) {
         foeEl.classList.add("friendpick");
@@ -1534,15 +1678,32 @@ Net.answerChallenge = async function (qid, letter) {
   Net._histCache = null;
 };
 
-async function revealDuel(s, mDoc, fDoc) {
+async function revealDuel(s, ca) {
   Net.revealed = true;
   const i = s.currentIndex || 0, n = s.totalQuestions || s.questionIds.length;
   const qid = (s.questionIds || [])[i];
-  if (mDoc.is_correct) { Net.myScore++; Net.myTimes.push(mDoc.timeMs || 0); }
-  else Net.myTimes.push(mDoc.timeMs || 0);
-  if (fDoc.is_correct) { Net.frScore++; Net.frTimes.push(fDoc.timeMs || 0); }
-  else Net.frTimes.push(fDoc.timeMs || 0);
-  (Net._reveals = Net._reveals || {})[i] = { i, qid, mine: mDoc.selected, foe: fDoc.selected };
+  const players = s.players || [s.host, s.guest];
+  Net.playerScores = Net.playerScores || {};
+  Net.playerTimes = Net.playerTimes || {};
+
+  players.forEach(p => {
+    const doc = ca[p];
+    if (doc) {
+      if (doc.is_correct) {
+        Net.playerScores[p] = (Net.playerScores[p] || 0) + 1;
+      }
+      Net.playerTimes[p] = Net.playerTimes[p] || [];
+      Net.playerTimes[p].push(doc.timeMs || 0);
+    }
+  });
+  Net.myScore = Net.playerScores[Net.name] || 0;
+  Net.myTimes = Net.playerTimes[Net.name] || [];
+  const firstFoe = players.find(p => p !== Net.name) || players[0];
+  Net.frScore = Net.playerScores[firstFoe] || 0;
+  Net.frTimes = Net.playerTimes[firstFoe] || [];
+
+  const mDoc = ca[Net.name] || {};
+  (Net._reveals = Net._reveals || {})[i] = { i, qid, mine: mDoc.selected, ca };
   Net._myPick = null;
   if (App() && App().S) { App().S.answers[qid] = mDoc.selected; saveAnswerCache(Net.name); }
   if (App() && App().renderQ) App().renderQ();
@@ -1551,8 +1712,16 @@ async function revealDuel(s, mDoc, fDoc) {
   if (right) { right.classList.remove("flip-reveal"); void right.offsetWidth; right.classList.add("flip-reveal"); }
   if (FX()) { FX().sound("whoosh"); setTimeout(() => FX() && FX().sound("tada"), 350); }
   paintBattle({ ...s, currentIndex: i });
-  toast(mDoc.is_correct ? `Correct! ${Net.myScore}–${Net.frScore} 🎉` :
-    `It was ${correctOf(s.questionIds[i])} — ${Net.myScore}–${Net.frScore}`);
+
+  const isMeCorrect = !!mDoc.is_correct;
+  if (players.length <= 2) {
+    toast(isMeCorrect ? `Correct! ${Net.myScore}–${Net.frScore} 🎉` :
+      `It was ${correctOf(qid)} — ${Net.myScore}–${Net.frScore}`);
+  } else {
+    toast(isMeCorrect ? `Correct! Score: ${$("scorepill")?.textContent || ""} 🎉` :
+      `It was ${correctOf(qid)} · ${$("scorepill")?.textContent || ""}`);
+  }
+
   setTimeout(async () => {
     if (!Net.session || Net.session.id !== s.id) return;
     if ((s.currentIndex || 0) !== i) return;
@@ -1580,18 +1749,49 @@ async function closeSession(s) {
 
 function finishSession(s) {
   exitBattleView();
-  const foe = s.host === Net.name ? s.guest : s.host;
+  const players = s.players || [s.host, s.guest];
   const n = s.totalQuestions || (s.questionIds || []).length;
-  const win = Net.myScore > Net.frScore, tie = Net.myScore === Net.frScore;
-  $("end-trophy").textContent = win ? "🏆" : tie ? "🤝" : "💪";
-  $("end-title").textContent = win ? "You win!" : tie ? "Dead even!" : foe + " wins!";
-  const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length / 100) / 10 + "s" : "—";
-  $("end-sub").textContent = `${Net.myScore}–${Net.frScore} over ${n} · avg you ${avg(Net.myTimes)} / them ${avg(Net.frTimes)}`;
-  $("end-grid").innerHTML =
-    `<div class="end-card"><b>${Net.myScore}</b><div>you</div></div>` +
-    `<div class="end-card"><b>${Net.frScore}</b><div>${esc(foe)}</div></div>`;
+  if (players.length <= 2) {
+    const foe = s.host === Net.name ? s.guest : s.host;
+    const win = Net.myScore > Net.frScore, tie = Net.myScore === Net.frScore;
+    $("end-trophy").textContent = win ? "🏆" : tie ? "🤝" : "💪";
+    $("end-title").textContent = win ? "You win!" : tie ? "Dead even!" : foe + " wins!";
+    const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length / 100) / 10 + "s" : "—";
+    $("end-sub").textContent = `${Net.myScore}–${Net.frScore} over ${n} · avg you ${avg(Net.myTimes)} / them ${avg(Net.frTimes)}`;
+    $("end-grid").innerHTML =
+      `<div class="end-card"><b>${Net.myScore}</b><div>you</div></div>` +
+      `<div class="end-card"><b>${Net.frScore}</b><div>${esc(foe)}</div></div>`;
+  } else {
+    // 3-way (1v1v1) podium
+    const ranked = [...players].sort((a, b) => (Net.playerScores[b] || 0) - (Net.playerScores[a] || 0));
+    const topScore = Net.playerScores[ranked[0]] || 0;
+    const winners = ranked.filter(p => (Net.playerScores[p] || 0) === topScore);
+    const win = winners.includes(Net.name);
+    const tie = winners.length > 1;
+
+    $("end-trophy").textContent = win ? (tie ? "🤝" : "🏆") : "💪";
+    $("end-title").textContent = win
+      ? (tie ? "Tie for 1st place!" : "You win!")
+      : (tie ? "Tie for 1st: " + winners.join(" & ") : ranked[0] + " wins!");
+
+    const avg = a => a && a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length / 100) / 10 + "s" : "—";
+    $("end-sub").textContent = `${n} questions · 3-Way Battle · Your avg ${avg(Net.myTimes)}`;
+
+    const medals = ["🥇", "🥈", "🥉"];
+    $("end-grid").innerHTML = ranked.map((p, idx) => {
+      const isMe = p === Net.name;
+      const sc = Net.playerScores[p] || 0;
+      const medal = medals[idx] || "";
+      return `<div class="end-card" style="${isMe ? 'border:2px solid var(--blue);background:rgba(37,99,235,0.08);' : ''}">` +
+        `<div style="font-size:18px;margin-bottom:2px">${medal}</div>` +
+        `<b>${sc}</b>` +
+        `<div style="font-weight:${isMe ? '700' : '500'}">${isMe ? 'you' : esc(p)}</div></div>`;
+    }).join("");
+  }
   $("ov-challend").classList.add("open");
   if (FX()) {
+    const win = $("end-title").textContent.includes("You win");
+    const tie = $("end-title").textContent.includes("Tie") || $("end-title").textContent.includes("Dead even");
     if (win) { FX().sound("fanfare"); FX().burst("perfect"); }
     else if (tie) FX().sound("tada");
     else FX().sound("neutral");
@@ -1620,8 +1820,6 @@ function exitBattleView() {
   const nav = $("navpill");
   if (nav) { nav.style.pointerEvents = ""; nav.style.opacity = ""; }
   if (App() && App().renderQ) App().renderQ();
-  // Fresh presence, not a repaint of duel-frozen data — this is the moment the
-  // roster used to decay to "0 online".
   try { refreshPresence(); } catch (e) {}
 }
 function sayChallHide() {
@@ -1645,12 +1843,10 @@ function sayChallHide() {
 function exitChallenge() {
   const s = Net.session;
   if (s && (s.status === "pending" || s.status === "active") &&
-      (s.host === Net.name || s.guest === Net.name)) {
+      (s.players || [s.host, s.guest]).includes(Net.name)) {
     if (!window.confirm("Forfeit the match? It will count as unfinished.")) return;
     const id = s.id;
     markForfeited(id);
-    // Awaited + keepalive: an immediate refresh must not strand the session as
-    // active (the old fire-and-forget lost the race with reload → rejoin loop).
     api("/api/sessions/" + encodeURIComponent(id),
       { method: "PATCH", keepalive: true, body: { actor: Net.name, pin: getPin(Net.name), action: "forfeit" } })
       .then(r => { if (!r || r.error === "offline") sendForfeitBeacon(id); })
@@ -1670,16 +1866,27 @@ function clearChallengeState() {
   exitBattleView();
   Net.revealed = false;
 }
-// Forfeit end screen for the opponent (partial scores stand, marked unfinished).
 function showForfeitEnd(s, foe) {
   exitBattleView();
   const n = s.totalQuestions || (s.questionIds || []).length;
+  const players = s.players || [s.host, s.guest];
   $("end-trophy").textContent = "🏳";
-  $("end-title").textContent = s.forfeitedBy ? foe + " forfeited" : "Match abandoned";
-  $("end-sub").textContent = `${Net.myScore}–${Net.frScore} after ${Math.min((s.currentIndex || 0) + 1, n)} of ${n} · recorded as unfinished`;
-  $("end-grid").innerHTML =
-    `<div class="end-card"><b>${Net.myScore}</b><div>you</div></div>` +
-    `<div class="end-card"><b>${Net.frScore}</b><div>${esc(foe)}</div></div>`;
+  $("end-title").textContent = s.forfeitedBy ? `${s.forfeitedBy} forfeited` : "Match abandoned";
+  $("end-sub").textContent = `Ended after ${Math.min((s.currentIndex || 0) + 1, n)} of ${n} · recorded as unfinished`;
+  if (players.length > 2) {
+    $("end-grid").innerHTML = players.map(p => {
+      const isMe = p === Net.name;
+      const sc = Net.playerScores ? (Net.playerScores[p] || 0) : 0;
+      const isForfeited = (s.forfeitedPlayers || []).includes(p);
+      return `<div class="end-card" style="${isMe ? 'border:2px solid var(--blue);background:rgba(37,99,235,0.08);' : ''}">` +
+        `<b>${sc}</b>` +
+        `<div style="font-weight:${isMe ? '700' : '500'}">${isMe ? 'you' : esc(p)}${isForfeited ? ' (forfeit)' : ''}</div></div>`;
+    }).join("");
+  } else {
+    $("end-grid").innerHTML =
+      `<div class="end-card"><b>${Net.myScore}</b><div>you</div></div>` +
+      `<div class="end-card"><b>${Net.frScore}</b><div>${esc(foe)}</div></div>`;
+  }
   $("ov-challend").classList.add("open");
   if (FX()) FX().sound("neutral");
   sayChallHide();
