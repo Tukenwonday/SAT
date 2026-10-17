@@ -543,6 +543,15 @@ function paintPresence(people, now) {
     btn.innerHTML = '<span class="dot"></span><span id="rostercount"></span>';
     const panel = document.createElement("div");
     panel.id = "rosterpanel"; panel.className = "roster-panel"; panel.style.display = "none";
+    if (!document.getElementById("roster-duel-css")) {
+      const rst = document.createElement("style");
+      rst.id = "roster-duel-css";
+      rst.textContent =
+        ".roster-row .rduel{display:none;font-size:10.5px;font-weight:700;color:#e11d48;background:#ffe4e6;" +
+        "border:1px solid #fecdd3;border-radius:999px;padding:1px 7px;margin-left:6px;white-space:nowrap;letter-spacing:-.2px}" +
+        ".roster-row .rduel.in-duel{display:inline-block}";
+      document.head.appendChild(rst);
+    }
     box.appendChild(btn); box.appendChild(panel);
     btn.addEventListener("click", ev => {
       ev.stopPropagation();
@@ -578,8 +587,15 @@ function rosterRow(person, online) {
   row.className = "roster-row" + (online ? " on" : "");
   row.dataset.name = person.name;
   row.innerHTML = '<span class="dot"></span><span class="rname"></span>' +
+    '<span class="rduel"></span>' +
     '<span class="rtoday"><b class="count-tick">0</b> today</span>';
   row.querySelector(".rname").textContent = person.name + (person.name === Net.name ? " (you)" : "");
+  if (person.duel && person.duel.vs) {
+    const dSpan = row.querySelector(".rduel");
+    dSpan.className = "rduel in-duel";
+    dSpan.textContent = `⚔️ vs ${person.duel.vs}`;
+    dSpan.title = `${person.name} is in a live duel with ${person.duel.vs}`;
+  }
   const tick = row.querySelector(".count-tick");
   const today = Net.todayCounts[person.name] || 0;
   tick.textContent = today;
@@ -813,6 +829,12 @@ function ensureHistCss() {
     "white-space:nowrap;letter-spacing:-.5px}" +
     ".dsub{font-size:12.5px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums}" +
     ".dsub2{font-size:12.5px;color:var(--muted);margin-top:1px}" +
+    ".dlive-head{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;letter-spacing:.08em;color:#e11d48;padding:6px 6px 4px}" +
+    ".dlive-dot{width:7px;height:7px;border-radius:50%;background:#e11d48;animation:pulselive 1.2s infinite ease-in-out}" +
+    "@keyframes pulselive{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(1.35)}}" +
+    ".dlive-row{background:#fff8f8;border:1px solid #ffe4e6;border-radius:12px;margin-bottom:10px}" +
+    ".dlive-score{color:#e11d48}" +
+    ".dsep{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:10px 6px 4px;border-top:1px dashed #e2e8f0;margin-top:6px}" +
     ".hempty{padding:34px 10px;text-align:center;font-size:14px;font-weight:600;" +
     "color:var(--muted);line-height:1.6}";
   document.head.appendChild(st);
@@ -867,15 +889,36 @@ async function renderDaily(box) {
   $("day-next").onclick = () => { Net._histDay--; renderDaily(box); };
 }
 
-// Duels: every finished challenge with its final score (from the ledger).
-async function renderDuels(box) {
-  box.innerHTML = '<div class="skel" style="height:120px"></div>';
+// Duels: live challenges + finished challenges with scores from the ledger.
+async function renderDuels(box, quiet) {
+  if (!quiet) box.innerHTML = '<div class="skel" style="height:120px"></div>';
   const r = await api("/api/sessions/history?user=" + encodeURIComponent(Net.name) +
     "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends");
-  if (!r || !r.ok) { box.innerHTML = "<p>Couldn't load duels (offline?).</p>"; return; }
+  if (!r || !r.ok) {
+    if (!quiet) box.innerHTML = "<p>Couldn't load duels (offline?).</p>";
+    return;
+  }
+  const live = r.live || [];
   const list = (r.sessions || []).filter(s => s.status === "finished").slice(0, 10); // compact popup: latest 10 finished duels only
-  if (!list.length) { box.innerHTML = "<p>No duels yet — send a ⚔️ challenge!</p>"; return; }
+  if (!live.length && !list.length) { box.innerHTML = "<p>No duels yet — send a ⚔️ challenge!</p>"; return; }
   let h = "";
+  if (live.length) {
+    h += `<div class="dlive-head"><span class="dlive-dot"></span> LIVE DUELS</div>`;
+    live.forEach(s => {
+      const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
+      const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
+      const mid = hs.ok + "–" + gs.ok;
+      const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
+      h += `<div class="drow dlive-row">` +
+        `<div class="dmatch"><span class="nm left">${esc(s.host)}</span>` +
+        `<span class="mid dlive-score">${mid}</span>` +
+        `<span class="nm right">${esc(s.guest)}</span></div>` +
+        `<div class="dsub">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b></div></div>`;
+    });
+    if (list.length) {
+      h += `<div class="dsep">RECENT COMPLETED</div>`;
+    }
+  }
   list.forEach((s, i) => {
     const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
     const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
@@ -892,6 +935,19 @@ async function renderDuels(box) {
       `<div class="dsub2">${s.totalQuestions} questions · ${esc(title)}</div></div>`;
   });
   box.innerHTML = h;
+
+  // Auto-refresh while duels tab is open to show live duel scores update
+  if (!Net._duelsTimer) {
+    Net._duelsTimer = setInterval(() => {
+      const ov = $("ov-history");
+      if (ov && ov.classList.contains("open") && Net._histTab === "duels") {
+        renderDuels(box, true);
+      } else {
+        clearInterval(Net._duelsTimer);
+        Net._duelsTimer = null;
+      }
+    }, 3500);
+  }
 }
 
 // ── challenge mode (live 1v1 duel state machine; VPS transport) ─────────────

@@ -71,12 +71,17 @@ async function friendNames(name) {
 async function presenceFor(viewer) {
   const friends = await friendNames(viewer);
   let rows;
-  if (!friends.length) {
-    rows = (await pool.query(
-      "SELECT s.* FROM status s ORDER BY s.last_seen DESC LIMIT $1", [MAX_PRESENCE])).rows;
-  } else {
-    const names = [...new Set([viewer, ...friends])];
-    rows = (await pool.query("SELECT s.* FROM status s WHERE s.name = ANY($1)", [names])).rows;
+  const [statusRes, activeRes] = await Promise.all([
+    !friends.length
+      ? pool.query("SELECT s.* FROM status s ORDER BY s.last_seen DESC LIMIT $1", [MAX_PRESENCE])
+      : pool.query("SELECT s.* FROM status s WHERE s.name = ANY($1)", [[...new Set([viewer, ...friends])]]),
+    pool.query("SELECT id, host, guest FROM sessions WHERE status = 'active'"),
+  ]);
+  rows = statusRes.rows;
+  const duelMap = {};
+  for (const d of activeRes.rows) {
+    duelMap[d.host] = { id: d.id, vs: d.guest };
+    duelMap[d.guest] = { id: d.id, vs: d.host };
   }
   const now = Date.now();
   const today = dayKeyOf(now);
@@ -88,6 +93,7 @@ async function presenceFor(viewer) {
     todayCount: r.day_key === today ? r.today_count : 0,
     dayKey: r.day_key,
     online: isOnline(r.last_seen, now),
+    duel: duelMap[r.name] || null,
   })).sort((a, b) => (a.name === viewer ? -1 : b.name === viewer ? 1 : a.name.localeCompare(b.name)));
 }
 // Push a fresh scoped presence:list to everyone in changedUser's circle.
@@ -155,6 +161,8 @@ async function sweepAbandonedSessions(now) {
     for (const s of r.rows) {
       io.to("session:" + s.id).emit("session:update",
         { id: s.id, host: s.host, guest: s.guest, status: "forfeited", forfeitedBy: null });
+      emitPresenceCircle(s.host);
+      if (s.guest) emitPresenceCircle(s.guest);
     }
     return r.rowCount;
   } catch (e) { console.error("sweep-abandoned", e.message); return 0; }
@@ -439,6 +447,13 @@ app.get("/api/sessions/history", async (req, res) => {
       const f = await friendNames(me);
       names = f.length ? [...new Set([me, ...f])] : null;
     }
+    const liveRows = (names
+      ? await pool.query(
+          `SELECT * FROM sessions WHERE status = 'active'
+           AND (host = ANY($1) OR guest = ANY($1)) ORDER BY created_at DESC`, [names])
+      : await pool.query(
+          `SELECT * FROM sessions WHERE status = 'active'
+           ORDER BY created_at DESC`)).rows;
     const rows = (names
       ? await pool.query(
           `SELECT * FROM sessions WHERE status = 'finished'
@@ -446,7 +461,8 @@ app.get("/api/sessions/history", async (req, res) => {
       : await pool.query(
           `SELECT * FROM sessions WHERE status = 'finished'
            ORDER BY created_at DESC LIMIT 50`)).rows;
-    const ids = rows.map(r => r.id);
+    const allRows = [...liveRows, ...rows];
+    const ids = allRows.map(r => r.id);
     const sc = {};
     if (ids.length) {
       const rr = await pool.query(
@@ -456,18 +472,17 @@ app.get("/api/sessions/history", async (req, res) => {
         (sc[a.session_id] = sc[a.session_id] || {})[a.user_name] = { ok: +a.ok, tot: +a.tot };
       }
     }
+    const mapSession = r => ({
+      ...sessionOut(r),
+      scores: {
+        [r.host]: (sc[r.id] && sc[r.id][r.host]) || { ok: 0, tot: 0 },
+        [r.guest]: (sc[r.id] && sc[r.id][r.guest]) || { ok: 0, tot: 0 },
+      },
+    });
     res.json({
       ok: true,
-      sessions: rows.map(r => {
-        const s = sessionOut(r);
-        return {
-          ...s,
-          scores: {
-            [r.host]: (sc[r.id] && sc[r.id][r.host]) || { ok: 0, tot: 0 },
-            [r.guest]: (sc[r.id] && sc[r.id][r.guest]) || { ok: 0, tot: 0 },
-          },
-        };
-      }),
+      live: liveRows.map(mapSession),
+      sessions: rows.map(mapSession),
     });
   } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
 });
@@ -689,6 +704,10 @@ app.patch("/api/sessions/:id", async (req, res) => {
       return res.status(400).json({ ok: false, error: "bad-action" });
     }
     io.to("session:" + s.id).emit("session:update", s);
+    if (action === "accept" || action === "finish" || action === "forfeit") {
+      emitPresenceCircle(s.host);
+      if (s.guest) emitPresenceCircle(s.guest);
+    }
     res.json({ ok: true, session: s, ...(typeof todayCount === "number" ? { todayCount } : {}) });
   } catch (e) { console.error("patch session", e.message); res.status(500).json({ ok: false, error: "server" }); }
 });
