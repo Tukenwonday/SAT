@@ -827,46 +827,53 @@ function ensureHistCss() {
   const st = document.createElement("style");
   st.id = "hist-css";
   st.textContent =
-    ".hist-tabs{display:flex;gap:0;margin:24px 0 6px;padding:5px;background:#f2f3f8;border-radius:18px}" +
-    ".hist-tabs button{flex:1;padding:12px;font-size:15px;font-weight:800;font-family:var(--sans);" +
-    "color:#6d7285;background:transparent;border:none;border-radius:13px;cursor:pointer;" +
+    ".hist-tabs{display:flex;gap:0;margin:12px 0 8px;padding:3px;background:#f2f3f8;border-radius:12px;flex:0 0 auto}" +
+    ".hist-tabs button{flex:1;padding:7px 12px;font-size:13.5px;font-weight:700;font-family:var(--sans);" +
+    "color:#6d7285;background:transparent;border:none;border-radius:9px;cursor:pointer;" +
     "transition:background .2s,color .2s,box-shadow .2s}" +
-    ".hist-tabs button.sel{background:#fff;color:var(--ink);box-shadow:0 3px 10px rgba(16,18,35,.12)}" +
-    ".daynav{display:flex;align-items:center;justify-content:center;gap:14px;margin:18px 0 6px}" +
-    ".daynav button{width:38px;height:38px;border-radius:50%;border:none;background:transparent;" +
-    "font-size:20px;font-weight:800;color:var(--ink);cursor:pointer;line-height:1;transition:background .15s}" +
+    ".hist-tabs button.sel{background:#fff;color:var(--ink);box-shadow:0 2px 6px rgba(16,18,35,.1)}" +
+    "html[data-theme='dark'] .hist-tabs{background:#16192b}" +
+    "html[data-theme='dark'] .hist-tabs button.sel{background:#2b304f;color:#f8fafc}" +
+    ".daynav{display:flex;align-items:center;justify-content:center;gap:12px;margin:12px 0 6px;flex:0 0 auto}" +
+    ".daynav button{width:32px;height:32px;border-radius:50%;border:none;background:transparent;" +
+    "font-size:18px;font-weight:800;color:var(--ink);cursor:pointer;line-height:1;transition:background .15s}" +
     ".daynav button:hover:not(:disabled){background:#eef0f7}" +
     ".daynav button:disabled{opacity:.25;cursor:default}" +
-    ".daynav b{font-size:15px;font-variant-numeric:tabular-nums;min-width:110px;text-align:center}" +
-    ".prow{display:flex;align-items:center;padding:13px 6px;border-bottom:1px solid #eef0f6;" +
-    "animation:rowin-p1 .35s cubic-bezier(.2,.9,.3,1) backwards}" +
+    ".daynav b{font-size:14px;font-variant-numeric:tabular-nums;min-width:90px;text-align:center}" +
+    ".prow{display:flex;align-items:center;padding:9px 6px;border-bottom:1px solid #eef0f6;" +
+    "animation:rowin-p1 .25s cubic-bezier(.2,.9,.3,1) backwards}" +
     ".prow:last-child{border-bottom:none}" +
     ".prow:hover{background:#fafbff}" +
+    "html[data-theme='dark'] .prow:hover{background:#1e2238}" +
     "@keyframes rowin-p1{0%{opacity:0;transform:translateY(6px)}100%{opacity:1;transform:none}}" +
-    ".prow .nm{font-size:15.5px;font-weight:800;letter-spacing:-.2px}" +
-    ".prow .ct{margin-left:auto;font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}" +
+    ".prow .nm{font-size:14px;font-weight:700;letter-spacing:-.2px}" +
+    ".prow .ct{margin-left:auto;font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}" +
     ".prow .ct.zero{color:#c3c7d4}" +
-    ".drow{padding:15px 6px 13px;text-align:center;border-bottom:1px solid #eef0f6;" +
-    "animation:rowin-p1 .35s cubic-bezier(.2,.9,.3,1) backwards}" +
+    ".drow{padding:9px 6px 8px;text-align:center;border-bottom:1px solid #f1f5f9;" +
+    "animation:rowin-p1 .25s cubic-bezier(.2,.9,.3,1) backwards}" +
     ".drow:last-child{border-bottom:none}" +
     ".drow:hover{background:#fafbff}" +
-    ".dmatch{display:flex;align-items:baseline;justify-content:center;gap:20px}" +
-    ".dmatch .nm{flex:1;min-width:0;font-size:15.5px;font-weight:800;letter-spacing:-.2px;" +
+    "html[data-theme='dark'] .drow:hover{background:#1e2238}" +
+    "html[data-theme='dark'] .drow{border-color:#232742}" +
+    ".dmatch{display:flex;align-items:baseline;justify-content:center;gap:14px}" +
+    ".dmatch .nm{flex:1;min-width:0;font-size:14px;font-weight:700;letter-spacing:-.2px;" +
     "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
     ".dmatch .nm.left{text-align:left}" +
     ".dmatch .nm.right{text-align:right}" +
     ".dmatch .nm.dim{opacity:.45}" +
-    ".dmatch .mid{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;" +
-    "white-space:nowrap;letter-spacing:-.5px}" +
-    ".dsub{font-size:12.5px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums}" +
-    ".dsub2{font-size:12.5px;color:var(--muted);margin-top:1px}" +
-    ".dlive-head{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;letter-spacing:.08em;color:#e11d48;padding:6px 6px 4px}" +
-    ".dlive-dot{width:7px;height:7px;border-radius:50%;background:#e11d48;animation:pulselive 1.2s infinite ease-in-out}" +
+    ".dmatch .mid{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;" +
+    "white-space:nowrap;letter-spacing:-.3px}" +
+    ".dsub{font-size:11px;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums}" +
+    ".dsub2{font-size:11px;color:var(--muted);margin-top:1px}" +
+    ".dlive-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;letter-spacing:.08em;color:#e11d48;padding:4px 6px 2px}" +
+    ".dlive-dot{width:6px;height:6px;border-radius:50%;background:#e11d48;animation:pulselive 1.2s infinite ease-in-out}" +
     "@keyframes pulselive{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(1.35)}}" +
-    ".dlive-row{background:#fff8f8;border:1px solid #ffe4e6;border-radius:12px;margin-bottom:10px}" +
+    ".dlive-row{background:#fff8f8;border:1px solid #ffe4e6;border-radius:10px;margin-bottom:8px}" +
     ".dlive-score{color:#e11d48}" +
-    ".dsep{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:10px 6px 4px;border-top:1px dashed #e2e8f0;margin-top:6px}" +
-    ".hempty{padding:34px 10px;text-align:center;font-size:14px;font-weight:600;" +
+    ".dsep{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:8px 6px 3px;border-top:1px dashed #e2e8f0;margin-top:4px}" +
+    ".dmore-spin{padding:10px;text-align:center;font-size:11.5px;color:var(--muted);font-weight:600}" +
+    ".dmore-end{padding:8px;text-align:center;font-size:11px;color:#94a3b8;font-weight:500}" +
+    ".hempty{padding:28px 10px;text-align:center;font-size:13.5px;font-weight:600;" +
     "color:var(--muted);line-height:1.6}";
   document.head.appendChild(st);
 }
@@ -920,18 +927,55 @@ async function renderDaily(box) {
   $("day-next").onclick = () => { Net._histDay--; renderDaily(box); };
 }
 
-// Duels: live challenges + finished challenges with scores from the ledger.
+function renderDuelItem(s, quiet, i) {
+  const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
+  const day = String(dayKeyOf(s.createdAt)).slice(5); // MM-DD: the year is noise
+  const rowAnim = quiet ? ' style="animation:none"' : ` style="animation-delay:${Math.min((i || 0) * 30, 210)}ms"`;
+  if (players.length > 2) {
+    const sorted = [...players].sort((a, b) => ((s.scores && s.scores[b]) ? s.scores[b].ok : 0) - ((s.scores && s.scores[a]) ? s.scores[a].ok : 0));
+    const topScore = (s.scores && s.scores[sorted[0]]) ? s.scores[sorted[0]].ok : 0;
+    const winners = sorted.filter(p => ((s.scores && s.scores[p]) ? s.scores[p].ok : 0) === topScore);
+    const tie = winners.length > 1;
+    const title = tie ? `Tie (${winners.join(" & ")})` : `${sorted[0]} wins`;
+    const scoresDisplay = sorted.map(p => `<span style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">${esc(p)}</span>: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
+    return `<div class="drow"${rowAnim}>` +
+      `<div class="dmatch" style="justify-content:center;gap:10px;font-size:13px;font-weight:700">` +
+      `<span>${scoresDisplay}</span></div>` +
+      `<div class="dsub">${esc(day)}</div>` +
+      `<div class="dsub2">${s.totalQuestions} questions · ${esc(title)} · 3-Way Battle</div></div>`;
+  } else {
+    const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
+    const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
+    const tie = hs.ok === gs.ok;
+    const lw = hs.ok > gs.ok ? "r" : (hs.ok < gs.ok ? "l" : ""); // dim the loser
+    const mid = hs.ok + "–" + gs.ok;
+    const title = tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins");
+    return `<div class="drow"${rowAnim}>` +
+      `<div class="dmatch"><span class="nm left${lw === "l" ? " dim" : ""}" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.host)}')">${esc(s.host)}</span>` +
+      `<span class="mid">${mid}</span>` +
+      `<span class="nm right${lw === "r" ? " dim" : ""}" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.guest)}')">${esc(s.guest)}</span></div>` +
+      `<div class="dsub">${esc(day)}</div>` +
+      `<div class="dsub2">${s.totalQuestions} questions · ${esc(title)}</div></div>`;
+  }
+}
+
+// Duels: live challenges + finished challenges with infinite scroll
 async function renderDuels(box, quiet) {
-  if (!quiet) box.innerHTML = '<div class="skel" style="height:120px"></div>';
+  if (!quiet) {
+    box.innerHTML = '<div class="skel" style="height:100px"></div>';
+    Net._duelOffset = 0;
+    Net._duelHasMore = true;
+    Net._duelLoading = false;
+  }
   const r = await api("/api/sessions/history?user=" + encodeURIComponent(Net.name) +
-    "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends");
+    "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends&limit=10&offset=" + (quiet ? 0 : (Net._duelOffset || 0)));
   if (!r || !r.ok) {
     if (!quiet) box.innerHTML = "<p>Couldn't load duels (offline?).</p>";
     return;
   }
   const live = r.live || [];
-  const list = (r.sessions || []).filter(s => s.status === "finished").slice(0, 10); // compact popup: latest 10 finished duels only
-  if (!live.length && !list.length) { box.innerHTML = "<p>No duels yet — send a ⚔️ challenge!</p>"; return; }
+  const list = (r.sessions || []).filter(s => s.status === "finished");
+  if (!live.length && !list.length) { box.innerHTML = "<p class='hempty'>No duels yet — send a ⚔️ challenge!</p>"; return; }
 
   // Silent in-place update for live scores on auto-refresh: no DOM replacement, no flicker or repeated animations
   if (quiet && $("live-duels-wrap")) {
@@ -943,8 +987,8 @@ async function renderDuels(box, quiet) {
         const scoreEl = $("live-sc-" + s.id);
         const subEl = $("live-sub-" + s.id);
         if (players.length > 2) {
-          const mid = players.map(p => `${esc(p)}: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
-          if (scoreEl && scoreEl.textContent !== mid) scoreEl.textContent = mid;
+          const mid = players.map(p => `<span style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">${esc(p)}</span>: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
+          if (scoreEl && scoreEl.innerHTML !== mid) scoreEl.innerHTML = mid;
           const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">3-Way Live ⚔️</b>`;
           if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
         } else {
@@ -971,7 +1015,7 @@ async function renderDuels(box, quiet) {
       if (players.length > 2) {
         const mid = players.map(p => `<span style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">${esc(p)}</span>: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
         h += `<div class="drow dlive-row" id="live-row-${s.id}"${anim}>` +
-          `<div class="dmatch" style="justify-content:center;gap:10px;font-size:14px;font-weight:700">` +
+          `<div class="dmatch" style="justify-content:center;gap:10px;font-size:13px;font-weight:700">` +
           `<span class="dlive-score" id="live-sc-${s.id}">${mid}</span></div>` +
           `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">3-Way Live ⚔️</b></div></div>`;
       } else {
@@ -986,42 +1030,27 @@ async function renderDuels(box, quiet) {
       }
     });
     h += `</div>`;
-    if (list.length) {
-      h += `<div class="dsep">RECENT COMPLETED</div>`;
-    }
   }
-  list.forEach((s, i) => {
-    const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
-    const day = String(dayKeyOf(s.createdAt)).slice(5); // MM-DD: the year is noise
-    const rowAnim = quiet ? ' style="animation:none"' : ` style="animation-delay:${Math.min(i * 40, 240)}ms"`;
-    if (players.length > 2) {
-      const sorted = [...players].sort((a, b) => ((s.scores && s.scores[b]) ? s.scores[b].ok : 0) - ((s.scores && s.scores[a]) ? s.scores[a].ok : 0));
-      const topScore = (s.scores && s.scores[sorted[0]]) ? s.scores[sorted[0]].ok : 0;
-      const winners = sorted.filter(p => ((s.scores && s.scores[p]) ? s.scores[p].ok : 0) === topScore);
-      const tie = winners.length > 1;
-      const title = tie ? `Tie (${winners.join(" & ")})` : `${sorted[0]} wins`;
-      const scoresDisplay = sorted.map(p => `<span style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">${esc(p)}</span>: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
-      h += `<div class="drow"${rowAnim}>` +
-        `<div class="dmatch" style="justify-content:center;gap:10px;font-size:13.5px;font-weight:700">` +
-        `<span>${scoresDisplay}</span></div>` +
-        `<div class="dsub">${esc(day)}</div>` +
-        `<div class="dsub2">${s.totalQuestions} questions · ${esc(title)} · 3-Way Battle</div></div>`;
-    } else {
-      const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
-      const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
-      const tie = hs.ok === gs.ok;
-      const lw = hs.ok > gs.ok ? "r" : (hs.ok < gs.ok ? "l" : ""); // dim the loser
-      const mid = hs.ok + "–" + gs.ok;
-      const title = tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins");
-      h += `<div class="drow"${rowAnim}>` +
-        `<div class="dmatch"><span class="nm left${lw === "l" ? " dim" : ""}" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.host)}')">${esc(s.host)}</span>` +
-        `<span class="mid">${mid}</span>` +
-        `<span class="nm right${lw === "r" ? " dim" : ""}" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.guest)}')">${esc(s.guest)}</span></div>` +
-        `<div class="dsub">${esc(day)}</div>` +
-        `<div class="dsub2">${s.totalQuestions} questions · ${esc(title)}</div></div>`;
-    }
-  });
+  if (list.length) {
+    h += `<div class="dsep">RECENT COMPLETED</div>`;
+    h += `<div id="duels-list">`;
+    list.forEach((s, i) => {
+      h += renderDuelItem(s, quiet, i);
+    });
+    h += `</div>`;
+    h += `<div id="duels-more"></div>`;
+  }
   box.innerHTML = h;
+
+  Net._duelHasMore = r.hasMore && list.length >= 10;
+
+  // Infinite scroll: when user reaches near the bottom of #hist-main, fetch next 10 duels
+  box.onscroll = () => {
+    if (Net._duelLoading || !Net._duelHasMore) return;
+    if (box.scrollTop + box.clientHeight >= box.scrollHeight - 50) {
+      loadMoreDuels(box);
+    }
+  };
 
   // Auto-refresh while duels tab is open to show live duel scores update
   if (!Net._duelsTimer) {
@@ -1034,6 +1063,36 @@ async function renderDuels(box, quiet) {
         Net._duelsTimer = null;
       }
     }, 3500);
+  }
+}
+
+async function loadMoreDuels(box) {
+  if (Net._duelLoading || !Net._duelHasMore) return;
+  Net._duelLoading = true;
+  const moreEl = $("duels-more");
+  if (moreEl) moreEl.innerHTML = '<div class="dmore-spin">Loading older duels…</div>';
+  Net._duelOffset = (Net._duelOffset || 0) + 10;
+  const r = await api("/api/sessions/history?user=" + encodeURIComponent(Net.name) +
+    "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends&limit=10&offset=" + Net._duelOffset);
+  Net._duelLoading = false;
+  if (!r || !r.ok) {
+    if (moreEl) moreEl.innerHTML = '';
+    return;
+  }
+  const list = (r.sessions || []).filter(s => s.status === "finished");
+  const listEl = $("duels-list");
+  if (listEl && list.length) {
+    let addHtml = "";
+    list.forEach((s, i) => {
+      addHtml += renderDuelItem(s, true, i);
+    });
+    listEl.insertAdjacentHTML("beforeend", addHtml);
+  }
+  if (!r.hasMore || list.length < 10) {
+    Net._duelHasMore = false;
+    if (moreEl) moreEl.innerHTML = '<div class="dmore-end">All duels loaded</div>';
+  } else {
+    if (moreEl) moreEl.innerHTML = '';
   }
 }
 

@@ -463,20 +463,25 @@ app.get("/api/sessions/history", async (req, res) => {
       const f = await friendNames(me);
       names = f.length ? [...new Set([me, ...f])] : null;
     }
-    const liveRows = (names
-      ? await pool.query(
-          `SELECT * FROM sessions WHERE status = 'active'
-           AND (host = ANY($1) OR guest = ANY($1) OR players && $1) ORDER BY created_at DESC`, [names])
-      : await pool.query(
-          `SELECT * FROM sessions WHERE status = 'active'
-           ORDER BY created_at DESC`)).rows;
+    const limit = Math.min(50, Math.max(1, +req.query.limit || 10));
+    const offset = Math.max(0, +req.query.offset || 0);
+    const liveRows = (offset === 0)
+      ? (names
+          ? (await pool.query(
+              `SELECT * FROM sessions WHERE status = 'active'
+               AND (host = ANY($1) OR guest = ANY($1) OR players && $1) ORDER BY created_at DESC`, [names])).rows
+          : (await pool.query(
+              `SELECT * FROM sessions WHERE status = 'active'
+               ORDER BY created_at DESC`)).rows)
+      : [];
     const rows = (names
-      ? await pool.query(
+      ? (await pool.query(
           `SELECT * FROM sessions WHERE status = 'finished'
-           AND (host = ANY($1) OR guest = ANY($1) OR players && $1) ORDER BY created_at DESC LIMIT 50`, [names])
-      : await pool.query(
+           AND (host = ANY($1) OR guest = ANY($1) OR players && $1)
+           ORDER BY created_at DESC LIMIT $2 OFFSET $3`, [names, limit, offset])).rows
+      : (await pool.query(
           `SELECT * FROM sessions WHERE status = 'finished'
-           ORDER BY created_at DESC LIMIT 50`)).rows;
+           ORDER BY created_at DESC LIMIT $1 OFFSET $2`, [limit, offset])).rows);
     const allRows = [...liveRows, ...rows];
     const ids = allRows.map(r => r.id);
     const sc = {};
@@ -500,6 +505,9 @@ app.get("/api/sessions/history", async (req, res) => {
       ok: true,
       live: liveRows.map(mapSession),
       sessions: rows.map(mapSession),
+      hasMore: rows.length === limit,
+      offset,
+      limit,
     });
   } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
 });
