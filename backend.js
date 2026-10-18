@@ -858,6 +858,16 @@ function ensureHistCss() {
     ".dmatch .nm.dim{opacity:.45}" +
     ".dmatch .mid{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;" +
     "white-space:nowrap;letter-spacing:-.3px}" +
+    ".trio-grid{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:baseline;padding:0 4px;gap:8px}" +
+    ".trio-col{display:flex;flex-direction:column;align-items:center;min-width:0;cursor:pointer}" +
+    ".trio-col.col-left{align-items:flex-start}" +
+    ".trio-col.col-mid{align-items:center}" +
+    ".trio-col.col-right{align-items:flex-end}" +
+    ".trio-score{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1;letter-spacing:-.3px}" +
+    ".trio-score.dim{opacity:.45}" +
+    ".trio-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;margin-top:3px;letter-spacing:-.2px}" +
+    ".trio-name.dim{opacity:.45}" +
+    ".trio-col:hover .trio-name{text-decoration:underline}" +
     ".dsub{font-size:11px;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums}" +
     ".dsub2{font-size:11px;color:var(--muted);margin-top:1px}" +
     ".dlive-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;letter-spacing:.08em;color:#e11d48;padding:4px 6px 2px}" +
@@ -929,15 +939,31 @@ function renderDuelItem(s, quiet, i) {
   if (players.length > 2) {
     const sorted = [...players].sort((a, b) => ((s.scores && s.scores[b]) ? s.scores[b].ok : 0) - ((s.scores && s.scores[a]) ? s.scores[a].ok : 0));
     const topScore = (s.scores && s.scores[sorted[0]]) ? s.scores[sorted[0]].ok : 0;
-    const winners = sorted.filter(p => ((s.scores && s.scores[p]) ? s.scores[p].ok : 0) === topScore);
-    const tie = winners.length > 1;
-    const title = tie ? `Tie (${winners.join(" & ")})` : `${sorted[0]} wins`;
-    const scoresDisplay = sorted.map(p => `<span style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">${esc(p)}</span>: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
+    const p1 = sorted[0], p2 = sorted[1] || sorted[0], p3 = sorted[2] || sorted[1] || sorted[0];
+    const s1 = (s.scores && s.scores[p1]) ? s.scores[p1].ok : 0;
+    const s2 = (s.scores && s.scores[p2]) ? s.scores[p2].ok : 0;
+    const s3 = (s.scores && s.scores[p3]) ? s.scores[p3].ok : 0;
+    const dim1 = s1 < topScore ? " dim" : "";
+    const dim2 = s2 < topScore ? " dim" : "";
+    const dim3 = s3 < topScore ? " dim" : "";
+
     return `<div class="drow"${rowAnim}>` +
-      `<div class="dmatch" style="justify-content:center;gap:10px;font-size:13px;font-weight:700">` +
-      `<span>${scoresDisplay}</span></div>` +
+      `<div class="trio-grid">` +
+        `<div class="trio-col col-left" onclick="event.stopPropagation();Net.openProfile('${esc(p1)}')">` +
+          `<span class="trio-score${dim1}">${s1}</span>` +
+          `<span class="trio-name${dim1}">${esc(p1)}</span>` +
+        `</div>` +
+        `<div class="trio-col col-mid" onclick="event.stopPropagation();Net.openProfile('${esc(p2)}')">` +
+          `<span class="trio-score${dim2}">${s2}</span>` +
+          `<span class="trio-name${dim2}">${esc(p2)}</span>` +
+        `</div>` +
+        `<div class="trio-col col-right" onclick="event.stopPropagation();Net.openProfile('${esc(p3)}')">` +
+          `<span class="trio-score${dim3}">${s3}</span>` +
+          `<span class="trio-name${dim3}">${esc(p3)}</span>` +
+        `</div>` +
+      `</div>` +
       `<div class="dsub">${esc(day)}</div>` +
-      `<div class="dsub2">${s.totalQuestions} questions · ${esc(title)} · 3-Way Battle</div></div>`;
+      `<div class="dsub2">${s.totalQuestions} questions</div></div>`;
   } else {
     const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
     const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
@@ -1039,11 +1065,26 @@ function renderLiveDuelsHtml(live) {
     const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
     const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
     if (players.length > 2) {
-      const mid = players.map(p => `<span style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">${esc(p)}</span>: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
+      const p1 = players[0], p2 = players[1] || players[0], p3 = players[2] || players[1] || players[0];
+      const s1 = (s.scores && s.scores[p1]) ? s.scores[p1].ok : 0;
+      const s2 = (s.scores && s.scores[p2]) ? s.scores[p2].ok : 0;
+      const s3 = (s.scores && s.scores[p3]) ? s.scores[p3].ok : 0;
       h += `<div class="drow dlive-row" id="live-row-${s.id}" style="animation:none">` +
-        `<div class="dmatch" style="justify-content:center;gap:10px;font-size:13px;font-weight:700">` +
-        `<span class="dlive-score" id="live-sc-${s.id}">${mid}</span></div>` +
-        `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">3-Way Live ⚔️</b></div></div>`;
+        `<div class="trio-grid" id="live-sc-${s.id}">` +
+          `<div class="trio-col col-left" onclick="event.stopPropagation();Net.openProfile('${esc(p1)}')">` +
+            `<span class="trio-score dlive-score">${s1}</span>` +
+            `<span class="trio-name">${esc(p1)}</span>` +
+          `</div>` +
+          `<div class="trio-col col-mid" onclick="event.stopPropagation();Net.openProfile('${esc(p2)}')">` +
+            `<span class="trio-score dlive-score">${s2}</span>` +
+            `<span class="trio-name">${esc(p2)}</span>` +
+          `</div>` +
+          `<div class="trio-col col-right" onclick="event.stopPropagation();Net.openProfile('${esc(p3)}')">` +
+            `<span class="trio-score dlive-score">${s3}</span>` +
+            `<span class="trio-name">${esc(p3)}</span>` +
+          `</div>` +
+        `</div>` +
+        `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b></div></div>`;
     } else {
       const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
       const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
@@ -1085,9 +1126,25 @@ function updateLiveDuelsInPlace(box, live) {
     const scoreEl = $("live-sc-" + s.id);
     const subEl = $("live-sub-" + s.id);
     if (players.length > 2) {
-      const mid = players.map(p => `<span style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">${esc(p)}</span>: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
-      if (scoreEl && scoreEl.innerHTML !== mid) scoreEl.innerHTML = mid;
-      const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">3-Way Live ⚔️</b>`;
+      const p1 = players[0], p2 = players[1] || players[0], p3 = players[2] || players[1] || players[0];
+      const s1 = (s.scores && s.scores[p1]) ? s.scores[p1].ok : 0;
+      const s2 = (s.scores && s.scores[p2]) ? s.scores[p2].ok : 0;
+      const s3 = (s.scores && s.scores[p3]) ? s.scores[p3].ok : 0;
+      const trioHtml = `
+        <div class="trio-col col-left" onclick="event.stopPropagation();Net.openProfile('${esc(p1)}')">
+          <span class="trio-score dlive-score">${s1}</span>
+          <span class="trio-name">${esc(p1)}</span>
+        </div>
+        <div class="trio-col col-mid" onclick="event.stopPropagation();Net.openProfile('${esc(p2)}')">
+          <span class="trio-score dlive-score">${s2}</span>
+          <span class="trio-name">${esc(p2)}</span>
+        </div>
+        <div class="trio-col col-right" onclick="event.stopPropagation();Net.openProfile('${esc(p3)}')">
+          <span class="trio-score dlive-score">${s3}</span>
+          <span class="trio-name">${esc(p3)}</span>
+        </div>`;
+      if (scoreEl && scoreEl.innerHTML !== trioHtml) scoreEl.innerHTML = trioHtml;
+      const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b>`;
       if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
     } else {
       const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
