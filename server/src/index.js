@@ -435,7 +435,7 @@ app.get("/api/invites/pending", async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
 });
 
-// Live session for rejoin across reload: latest pending/active duel I'm in.
+// Live session for rejoin across reload: latest pending/active duel I'm in (excluding forfeited matches).
 app.get("/api/sessions/live", async (req, res) => {
   try {
     const c = await checkPin(req.query.user, req.query.pin);
@@ -443,6 +443,8 @@ app.get("/api/sessions/live", async (req, res) => {
     const r = await pool.query(
       `SELECT * FROM sessions WHERE ($1 = ANY(players) OR host=$1 OR guest=$1)
        AND status IN ('pending','active')
+       AND NOT ($1 = ANY(COALESCE(forfeited_players, '{}')))
+       AND (forfeited_by IS NULL OR forfeited_by <> $1)
        ORDER BY created_at DESC LIMIT 1`,
       [c.name]);
     res.json({ ok: true, session: r.rowCount ? sessionOut(r.rows[0]) : null });
@@ -862,9 +864,12 @@ app.patch("/api/sessions/:id", async (req, res) => {
             "UPDATE sessions SET status='forfeited', forfeited_by=$2, forfeited_players=$3, finished_at=now() WHERE id=$1 RETURNING *",
             [id, c.name, forfeited]);
         } else {
+          // A player left a 3-way match: reassign host if host left, and update guest so match becomes clean 1v1
+          const newHost = remaining.includes(s.host) ? s.host : remaining[0];
+          const newGuest = remaining.find(p => p !== newHost) || remaining[1];
           r = await pool.query(
-            "UPDATE sessions SET forfeited_players=$2 WHERE id=$1 RETURNING *",
-            [id, forfeited]);
+            "UPDATE sessions SET forfeited_players=$2, host=$3, guest=$4 WHERE id=$1 RETURNING *",
+            [id, forfeited, newHost, newGuest]);
         }
         s = sessionOut(r.rows[0]);
       }
@@ -899,7 +904,9 @@ app.patch("/api/sessions/:id", async (req, res) => {
       todayCount = tc ? tc.today_count : 0;
       emitPresenceCircle(c.name);
     } else if (action === "advance") {
-      if (!isHost || s.status !== "active") return res.status(409).json({ ok: false, error: "bad-state" });
+      const activeRemaining = s.players.filter(p => !(s.forfeitedPlayers || []).includes(p));
+      const effectiveHost = activeRemaining.includes(s.host) ? s.host : activeRemaining[0];
+      if ((c.name !== effectiveHost && !isHost) || s.status !== "active") return res.status(409).json({ ok: false, error: "bad-state" });
       const ni = Math.max(0, +req.body.currentIndex || 0);
       const r = await pool.query(
         "UPDATE sessions SET current_index=$2, current_answers='{}' WHERE id=$1 RETURNING *", [id, ni]);

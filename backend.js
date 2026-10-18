@@ -87,18 +87,18 @@ function ensurePin(name) {
   return pin;
 }
 
-// Sessions I forfeited (survives reload in this tab): the boot rejoin must
-// never resurrect them — a lost forfeit write would otherwise countdown-loop.
+// Sessions I forfeited (survives reload): the boot rejoin must
+// never resurrect them — once exited, you cannot rejoin.
 function loadForfeited() {
-  try { return JSON.parse(sessionStorage.getItem("satbank:forfeited") || "{}") || {}; }
+  try { return JSON.parse(localStorage.getItem("satbank:forfeited") || "{}") || {}; }
   catch (e) { return {}; }
 }
 function markForfeited(id) {
   if (!id) return;
   try {
-    Net._forfeited = Net._forfeited || {};
+    Net._forfeited = Net._forfeited || loadForfeited();
     Net._forfeited[id] = Date.now();
-    sessionStorage.setItem("satbank:forfeited", JSON.stringify(Net._forfeited));
+    localStorage.setItem("satbank:forfeited", JSON.stringify(Net._forfeited));
   } catch (e) {}
 }
 // Beacon forfeit: the only delivery that survives tab close. text/plain blob
@@ -355,34 +355,29 @@ async function identify(name, pin, quiet) {
       "&pin=" + encodeURIComponent(getPin(name)));
     if (inv && inv.invite) showInvite(inv.invite.id, inv.invite);
   }
-  // Rejoin a duel that was live across reload (scores restart from zero).
-  // Sessions I forfeited are never resurrected: the server gets a cleanup
-  // forfeit in case the original write died with the reload. Active sessions
-  // ask first — no more surprise 3-2-1 countdown loops.
+  // If an active session was found on reload: never resurrect an exited/forfeited match.
+  // Stays in solo practice mode without annoying prompts or countdown loops.
   try {
     const live = await api("/api/sessions/live?user=" + encodeURIComponent(name) +
       "&pin=" + encodeURIComponent(getPin(name)));
     if (live && live.session) {
       const s = live.session;
-      if (Net._forfeited && Net._forfeited[s.id]) {
-        try { delete Net._forfeited[s.id]; sessionStorage.setItem("satbank:forfeited", JSON.stringify(Net._forfeited)); } catch (e2) {}
+      const isForfeited = (Net._forfeited && Net._forfeited[s.id]) ||
+                          (s.forfeitedPlayers && s.forfeitedPlayers.includes(name)) ||
+                          s.forfeitedBy === name;
+      if (isForfeited || s.status === "active") {
+        markForfeited(s.id);
         api("/api/sessions/" + encodeURIComponent(s.id),
-          { method: "PATCH", keepalive: true, body: { actor: name, pin: getPin(name), action: "forfeit" } });
-      } else if (s.status === "active") {
-        const foe = s.host === name ? s.guest : s.host;
-        const nq = s.totalQuestions || (s.questionIds || []).length;
-        let back = false;
-        try { back = window.confirm(`Rejoin your duel vs ${foe}? (Q${(s.currentIndex || 0) + 1} of ${nq})`); } catch (e2) {}
-        if (back) watchSession(s.id);
-        else {
-          markForfeited(s.id);
-          api("/api/sessions/" + encodeURIComponent(s.id),
-            { method: "PATCH", keepalive: true, body: { actor: name, pin: getPin(name), action: "forfeit" } });
-          if (pendingInvite && pendingInvite.id === s.id) hideInvite();
-        }
+          { method: "PATCH", keepalive: true, body: { actor: name, pin: getPin(name), action: "forfeit" } }).catch(() => {});
+        if (pendingInvite && pendingInvite.id === s.id) hideInvite();
+        clearChallengeState();
+        exitBattleView();
+      } else if (s.status === "pending" && s.host === name) {
+        watchSession(s.id);
+        sayChall("Waiting for opponent…");
+      } else if (s.status === "pending" && (s.guest === name || (s.players && s.players.includes(name)))) {
+        showInvite(s.id, s);
       }
-      else if (s.status === "pending" && s.host === name) { watchSession(s.id); sayChall("Waiting for opponent…"); }
-      else if (s.status === "pending" && s.guest === name) { showInvite(s.id, s); }
     }
   } catch (e) {}
   startInvitePoll();
@@ -1170,7 +1165,10 @@ function wireChallengeUI() {
   ensureChatDom();
   wireChatKeys();
 }
-Net.inChallenge = () => !!(Net.session && Net.session.status === "active");
+Net.inChallenge = () => !!(Net.session && Net.session.status === "active" &&
+  (!Net.session.forfeitedPlayers || !Net.session.forfeitedPlayers.includes(Net.name)) &&
+  Net.session.forfeitedBy !== Net.name &&
+  (!Net._forfeited || !Net._forfeited[Net.session.id]));
 
 Net.openProfile = async function (name) {
   name = cleanName(name);
@@ -1530,6 +1528,18 @@ function onSession(s) {
   // current session passes. Stale room events for a superseded session must
   // never tear down a newer duel (accept/create race).
   if (Net._watching ? s.id !== Net._watching : (cur && s.id !== cur)) return;
+
+  // If I have forfeited or exited this match, ignore this session completely:
+  const amForfeited = (s.forfeitedPlayers && s.forfeitedPlayers.includes(Net.name)) ||
+                      s.forfeitedBy === Net.name ||
+                      (Net._forfeited && Net._forfeited[s.id]);
+  if (amForfeited) {
+    if (Net.socket && Net.socket.connected) Net.socket.emit("session:leave", { id: s.id });
+    clearChallengeState();
+    exitBattleView();
+    return;
+  }
+
   Net._sessSyncMs = Date.now();
   if (pendingInvite && pendingInvite.id === s.id && s.status !== "pending") hideInvite();
   const was = Net.session ? Net.session.status : null;
@@ -1557,7 +1567,13 @@ function onSession(s) {
     s.forfeitedPlayers.forEach(p => {
       if (!Net._announcedForfeits.has(p)) {
         Net._announcedForfeits.add(p);
-        toast(`${p} forfeited! The battle continues ⚔️`);
+        const act = (s.players || [s.host, s.guest]).filter(u => !s.forfeitedPlayers.includes(u));
+        if (act.length === 2) {
+          const otherFoe = act.find(u => u !== Net.name);
+          toast(`${p} left! Switched to 1v1 vs ${otherFoe} ⚔️`);
+        } else {
+          toast(`${p} forfeited! The battle continues ⚔️`);
+        }
       }
     });
   }
@@ -1678,22 +1694,26 @@ function syncBattle(s) {
 function paintBattle(s) {
   const i = s.currentIndex || 0, n = s.totalQuestions || (s.questionIds || []).length;
   const players = s.players || [s.host, s.guest];
+  const forfeited = s.forfeitedPlayers || [];
+  const activePlayers = players.filter(p => !forfeited.includes(p));
   const pill = $("scorepill");
-  if (players.length <= 2) {
-    const foe = s.host === Net.name ? s.guest : s.host;
+  if (activePlayers.length <= 2) {
+    const foe = activePlayers.find(p => p !== Net.name) || (s.host === Net.name ? s.guest : s.host);
     sayChall(`⚔️ Q${Math.min(i + 1, n)}/${n} vs ${foe}`);
     if (pill) {
       pill.style.display = "";
+      const myScore = Net.playerScores ? (Net.playerScores[Net.name] || 0) : Net.myScore;
+      const foeScore = Net.playerScores ? (Net.playerScores[foe] || 0) : Net.frScore;
       const prev = pill.dataset.sc || "0-0";
-      pill.dataset.sc = Net.myScore + "-" + Net.frScore;
-      pill.textContent = `You ${Net.myScore} – ${Net.frScore} ${foe}`;
+      pill.dataset.sc = myScore + "-" + foeScore;
+      pill.textContent = `You ${myScore} – ${foeScore} ${foe}`;
       if (prev !== pill.dataset.sc && FX()) FX().sound("tada");
     }
   } else {
     sayChall(`⚔️ Q${Math.min(i + 1, n)}/${n} · 3-Way Battle`);
     if (pill) {
       pill.style.display = "";
-      const scoreStr = players.map(p => (p === Net.name ? "You" : p) + " " + (Net.playerScores ? (Net.playerScores[p] || 0) : 0)).join(" · ");
+      const scoreStr = activePlayers.map(p => (p === Net.name ? "You" : p) + " " + (Net.playerScores ? (Net.playerScores[p] || 0) : 0)).join(" · ");
       const prev = pill.dataset.sc || "";
       pill.dataset.sc = scoreStr;
       pill.textContent = scoreStr;
@@ -1858,6 +1878,8 @@ async function revealDuel(s, ca) {
   const i = s.currentIndex || 0, n = s.totalQuestions || s.questionIds.length;
   const qid = (s.questionIds || [])[i];
   const players = s.players || [s.host, s.guest];
+  const forfeited = s.forfeitedPlayers || [];
+  const activePlayers = players.filter(p => !forfeited.includes(p));
   Net.playerScores = Net.playerScores || {};
   Net.playerTimes = Net.playerTimes || {};
 
@@ -1873,7 +1895,7 @@ async function revealDuel(s, ca) {
   });
   Net.myScore = Net.playerScores[Net.name] || 0;
   Net.myTimes = Net.playerTimes[Net.name] || [];
-  const firstFoe = players.find(p => p !== Net.name) || players[0];
+  const firstFoe = activePlayers.find(p => p !== Net.name) || players.find(p => p !== Net.name) || players[0];
   Net.frScore = Net.playerScores[firstFoe] || 0;
   Net.frTimes = Net.playerTimes[firstFoe] || [];
 
@@ -1889,7 +1911,7 @@ async function revealDuel(s, ca) {
   paintBattle({ ...s, currentIndex: i });
 
   const isMeCorrect = !!mDoc.is_correct;
-  if (players.length <= 2) {
+  if (activePlayers.length <= 2) {
     toast(isMeCorrect ? `Correct! ${Net.myScore}–${Net.frScore} 🎉` :
       `It was ${correctOf(qid)} — ${Net.myScore}–${Net.frScore}`);
   } else {
@@ -1901,7 +1923,8 @@ async function revealDuel(s, ca) {
     if (!Net.session || Net.session.id !== s.id) return;
     if ((s.currentIndex || 0) !== i) return;
     if (i + 1 >= n) { await closeSession(s); return; }
-    if (Net.name === s.host) {
+    const effectiveHost = activePlayers.includes(s.host) ? s.host : activePlayers[0];
+    if (Net.name === effectiveHost) {
       const ar = await api("/api/sessions/" + encodeURIComponent(s.id),
         { method: "PATCH", body: { actor: Net.name, pin: getPin(Net.name), action: "advance", currentIndex: i + 1 } });
       if (!ar || !ar.ok) refreshSession(s.id);
@@ -1925,11 +1948,13 @@ async function closeSession(s) {
 function finishSession(s) {
   exitBattleView();
   const players = s.players || [s.host, s.guest];
+  const forfeited = s.forfeitedPlayers || [];
+  const activePlayers = players.filter(p => !forfeited.includes(p));
   const n = s.totalQuestions || (s.questionIds || []).length;
   const avg = a => a && a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length / 100) / 10 + "s" : "—";
 
-  if (players.length <= 2) {
-    const foe = s.host === Net.name ? s.guest : s.host;
+  if (activePlayers.length <= 2) {
+    const foe = activePlayers.find(p => p !== Net.name) || (s.host === Net.name ? s.guest : s.host);
     const win = Net.myScore > Net.frScore, tie = Net.myScore === Net.frScore;
     if ($("end-trophy")) $("end-trophy").textContent = win ? "🏆" : tie ? "🤝" : "💪";
     $("end-title").textContent = win ? "You win!" : tie ? "Dead even!" : esc(foe) + " wins!";
@@ -2091,6 +2116,7 @@ function exitChallenge() {
     toast("Match forfeited 🏳");
   }
   clearChallengeState();
+  exitBattleView();
 }
 // Silent teardown: expired/declined/forfeited arrivals, invite timeouts, end-of-match.
 // Never confirms, never writes — the match is already over server-side.
