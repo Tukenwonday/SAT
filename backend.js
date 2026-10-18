@@ -20,6 +20,7 @@ const BASE = baseUrl();
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const cleanName = s => String(s || "").trim().slice(0, 20);
 const App = () => window.App;
 const FX = () => window.FX;
 const toast = (m, ms) => { if (window.toast) window.toast(m, ms); };
@@ -634,7 +635,7 @@ function injectPinBox() {
   inp.type = "password";
   inp.maxLength = 64;
   inp.placeholder = "PIN";
-  inp.autocomplete = "off";
+  inp.autocomplete = "current-password";
   inp.title = "Your name PIN — prevents impersonation";
   inp.style.cssText = "padding:8px 10px;font-size:14px;border:1.5px solid #333;border-radius:12px;" +
     "font-family:var(--sans);max-width:80px;";

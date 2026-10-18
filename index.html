@@ -2839,11 +2839,11 @@
     </div>
     <hr class="dash">
     <footer id="footer">
-      <div id="namebox" title="Your display name — just a name, no login">
+      <form id="namebox" title="Your display name — just a name, no login" onsubmit="event.preventDefault()">
         <input id="nameinput" type="text" maxlength="20" placeholder="Your name…" autocomplete="off">
-        <button id="namesave">Save</button>
+        <button id="namesave" type="button">Save</button>
         <span id="whoami" style="display:none"></span>
-      </div>
+      </form>
       <span id="challpill" style="display:none"></span>
       <button id="navpill">Question 1 of 1845 <svg width="11" height="7" viewBox="0 0 11 7" style="vertical-align:1px">
           <path d="M1 5.8L5.5 1.5 10 5.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
