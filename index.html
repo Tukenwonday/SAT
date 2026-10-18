@@ -4,7 +4,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bluebook Practice — Section 1, Module 1: Reading and Writing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&family=Space+Grotesk:wght@600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
       --chrome: #e9edf4;
@@ -2554,36 +2556,202 @@
       box-shadow: 0 14px 40px rgba(20, 20, 60, .25);
     }
 
-    .end-card {
-      background: linear-gradient(180deg, #f4f5ff, #e9ecff);
-      border: 1.5px solid #d5dbff;
-      border-radius: 18px;
-      padding: 14px 26px;
-      min-width: 110px;
-      box-shadow: 0 8px 24px rgba(99, 102, 241, .18);
+    /* ── Duel Match Over Modal (Bluebook Elite Minimalist White) ── */
+    #ov-challend {
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(8px);
     }
 
-    .end-card b {
-      font-size: 32px;
-      font-variant-numeric: tabular-nums;
+    .challend-modal {
+      width: 100%;
+      max-width: 440px !important;
+      background: #ffffff !important;
+      border: 1px solid #e2e8f0;
+      border-radius: 28px !important;
+      padding: 44px 36px 36px !important;
+      box-shadow: 0 24px 60px -12px rgba(15, 23, 42, 0.16), 0 8px 24px -6px rgba(15, 23, 42, 0.08) !important;
+      text-align: center;
+      position: relative;
+      animation: challendSpring 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
     }
 
-    #end-trophy {
-      animation: trophy-bounce .8s var(--ease-premium);
+    @keyframes challendSpring {
+      0% { transform: scale(0.92) translateY(14px); opacity: 0; }
+      100% { transform: scale(1) translateY(0); opacity: 1; }
     }
 
-    @keyframes trophy-bounce {
-      0% {
-        transform: scale(0) rotate(-20deg);
-      }
+    .challend-headline {
+      font-size: 28px !important;
+      font-weight: 800 !important;
+      letter-spacing: -0.03em !important;
+      color: #0f172a !important;
+      margin: 0 0 28px !important;
+      font-family: 'Plus Jakarta Sans', var(--sans);
+    }
 
-      60% {
-        transform: scale(1.25) rotate(6deg);
-      }
+    /* 1v1 Matchup Stage */
+    .challend-matchup {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 36px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid #f1f5f9;
+      margin-bottom: 24px;
+    }
 
-      100% {
-        transform: scale(1);
-      }
+    .challend-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 90px;
+    }
+
+    .challend-score {
+      font-family: 'Space Grotesk', var(--sans);
+      font-size: 64px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      color: #94a3b8;
+      transition: color 0.2s ease, transform 0.2s ease;
+    }
+
+    .challend-score.is-winner {
+      color: #2563eb;
+    }
+
+    .challend-player {
+      font-size: 15px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-top: 8px;
+    }
+
+    .challend-vs {
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #cbd5e1;
+      user-select: none;
+    }
+
+    /* 1v1v1 3-Player Podium */
+    .challend-podium {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 20px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid #f1f5f9;
+      margin-bottom: 24px;
+    }
+
+    .challend-podium-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+    }
+
+    .challend-podium-col .challend-score {
+      font-size: 52px;
+    }
+
+    .challend-podium-col.winner .challend-score {
+      color: #2563eb;
+      font-size: 60px;
+    }
+
+    .challend-podium-col .challend-player {
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-top: 6px;
+    }
+
+    .challend-podium-col.winner .challend-player {
+      color: #2563eb;
+      font-weight: 800;
+    }
+
+    /* Pace Comparison cards */
+    .challend-time-strip {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 30px;
+    }
+
+    .challend-time-strip.three-way {
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .challend-time-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 14px 16px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .challend-time-strip.three-way .challend-time-card {
+      padding: 12px 8px;
+    }
+
+    .challend-time-card:hover {
+      border-color: #cbd5e1;
+      transform: translateY(-1px);
+    }
+
+    .challend-time-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748b;
+    }
+
+    .challend-time-value {
+      font-family: 'Space Grotesk', var(--sans);
+      font-size: 20px;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+
+    .challend-time-strip.three-way .challend-time-value {
+      font-size: 17px;
+    }
+
+    /* Single Primary Action: Keep Practicing */
+    .challend-btn-keep {
+      width: 100%;
+      background: #2563eb;
+      color: #ffffff;
+      border: none;
+      border-radius: 999px;
+      padding: 15px 28px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28);
+      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+      outline: none;
+    }
+
+    .challend-btn-keep:hover {
+      background: #1d4ed8;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.38);
+    }
+
+    .challend-btn-keep:active {
+      transform: translateY(1px);
     }
 
     #namesave {
@@ -3011,13 +3179,13 @@
   </div>
 
   <div class="overlay" id="ov-challend">
-    <div class="modal" style="max-width:560px;text-align:center">
-      <div id="end-trophy" style="font-size:54px">🏆</div>
-      <h2 id="end-title">Match over</h2>
-      <div id="end-sub" style="font-size:15px;margin:6px 0 12px"></div>
-      <div id="end-grid" style="display:flex;gap:10px;justify-content:center;margin-bottom:8px"></div>
-      <div class="mrow" style="justify-content:center"><button class="btn-blue" id="endclose">Keep practicing</button>
-      </div>
+    <div class="modal challend-modal" onclick="event.stopPropagation()">
+      <div id="end-trophy" style="display:none"></div>
+      <h2 class="challend-headline" id="end-title">You win!</h2>
+      <div id="end-sub" style="display:none"></div>
+      <div id="end-grid"></div>
+      <div id="end-times"></div>
+      <button class="challend-btn-keep" id="endclose">Keep Practicing</button>
     </div>
   </div>
 
@@ -3947,8 +4115,80 @@
         count(i) { tone(440 + i * 160, 440 + i * 160, 0, 0.12); },         // countdown rising tones
         whoosh() { tone(300, 900, 0, 0.16, 'sine', 0.06); },    // card-flip reveal
         tada() { [523, 659, 784].forEach((f, i) => tone(f, f * 1.01, i * 0.08, 0.14)); }, // score up
-        fanfare() { [523, 659, 784, 1047, 784, 1047].forEach((f, i) => tone(f, f, i * 0.11, 0.2)); }, // win
-        neutral() { tone(440, 415, 0, 0.25, 'sine', 0.07); },   // soft neutral (loss)
+        fanfare() {
+          const a = ac(); if (!a) return;
+          const now = a.currentTime;
+          const notes = [
+            { f: 349.23, time: 0.00, dur: 0.55, gain: 0.18 }, // F4
+            { f: 440.00, time: 0.09, dur: 0.55, gain: 0.20 }, // A4
+            { f: 523.25, time: 0.18, dur: 0.60, gain: 0.22 }, // C5
+            { f: 659.25, time: 0.27, dur: 0.70, gain: 0.25 }, // E5
+            { f: 783.99, time: 0.36, dur: 0.85, gain: 0.26 }, // G5
+            { f: 1046.50, time: 0.46, dur: 1.60, gain: 0.30 } // C6 (Crown note)
+          ];
+          notes.forEach(n => {
+            const start = now + n.time;
+            const osc = a.createOscillator(), g = a.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(n.f, start);
+            g.gain.setValueAtTime(0, start);
+            g.gain.linearRampToValueAtTime(n.gain, start + 0.035);
+            g.gain.exponentialRampToValueAtTime(0.0001, start + n.dur);
+            osc.connect(g); g.connect(a.destination);
+            osc.start(start); osc.stop(start + n.dur + 0.05);
+
+            const harm = a.createOscillator(), harmG = a.createGain();
+            harm.type = 'sine';
+            harm.frequency.setValueAtTime(n.f * 2.01, start);
+            harmG.gain.setValueAtTime(0, start);
+            harmG.gain.linearRampToValueAtTime(n.gain * 0.35, start + 0.02);
+            harmG.gain.exponentialRampToValueAtTime(0.0001, start + n.dur * 0.45);
+            harm.connect(harmG); harmG.connect(a.destination);
+            harm.start(start); harm.stop(start + n.dur * 0.5);
+          });
+          // Final chord shimmer
+          [523.25, 783.99, 1046.50, 1318.51].forEach((freq, idx) => {
+            const co = a.createOscillator(), cg = a.createGain();
+            const cs = now + 0.46;
+            co.type = 'sine';
+            co.frequency.setValueAtTime(freq + (idx % 2 === 0 ? 0.75 : -0.75), cs);
+            cg.gain.setValueAtTime(0, cs);
+            cg.gain.linearRampToValueAtTime(0.12 / (idx + 1), cs + 0.08);
+            cg.gain.exponentialRampToValueAtTime(0.0001, cs + 1.8);
+            co.connect(cg); cg.connect(a.destination);
+            co.start(cs); co.stop(cs + 1.85);
+          });
+        },
+        neutral() {
+          // Beloved soft defeat tone: E4 -> C4 -> A3
+          const a = ac(); if (!a) return;
+          const now = a.currentTime;
+          [329.63, 261.63, 220.00].forEach((freq, i) => {
+            const osc = a.createOscillator(), g = a.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + i * 0.18);
+            g.gain.setValueAtTime(0, now + i * 0.18);
+            g.gain.linearRampToValueAtTime(0.18, now + i * 0.18 + 0.05);
+            g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.18 + 0.55);
+            osc.connect(g); g.connect(a.destination);
+            osc.start(now + i * 0.18);
+            osc.stop(now + i * 0.18 + 0.6);
+          });
+        },
+        tie() {
+          const a = ac(); if (!a) return;
+          const now = a.currentTime;
+          [440, 554.37].forEach((freq, i) => {
+            const osc = a.createOscillator(), g = a.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + i * 0.12);
+            g.gain.setValueAtTime(0.15, now + i * 0.12);
+            g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.12 + 0.5);
+            osc.connect(g); g.connect(a.destination);
+            osc.start(now + i * 0.12);
+            osc.stop(now + i * 0.12 + 0.55);
+          });
+        },
         go() { tone(440, 880, 0, 0.12); },
         seal() { [523, 659, 784, 1047].forEach((f, i) => tone(f, f, i * 0.09, 0.16)); },
         rank() {
@@ -3969,8 +4209,8 @@
         return store.on;
       }
 
-      /* canvas confetti */
-      const PALETTE = ['#e9b949', '#35b5ac', '#5fc4f5', '#b45cf0', '#37c871', '#ff6b6b', '#ffffff'];
+      /* canvas confetti & celebration physics engine */
+      const PALETTE = ['#2563eb', '#3b82f6', '#60a5fa', '#f59e0b', '#fbbf24', '#10b981', '#8b5cf6'];
       let cv = null, ctx = null, parts = [], rafId = 0, lastT = 0;
       function ensureCv() {
         if (cv) return true;
@@ -3987,6 +4227,97 @@
           return true;
         } catch (e) { return false; }
       }
+
+      /* Smooth sky falling celebratory particles */
+      let skyParts = [], skyRafId = 0;
+      class SkyParticle {
+        constructor() {
+          this.reset();
+          this.y = -20 - Math.random() * (innerHeight * 0.6);
+        }
+        reset() {
+          this.x = Math.random() * innerWidth;
+          this.y = -20 - Math.random() * 80;
+          this.size = 7 + Math.random() * 8;
+          this.color = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+          this.type = Math.random() > 0.35 ? 'ribbon' : 'star';
+          this.vy = 2.2 + Math.random() * 2.8;
+          this.vx = (Math.random() - 0.5) * 1.6;
+          this.rotation = Math.random() * 360;
+          this.vRot = (Math.random() - 0.5) * 4;
+          this.wobble = Math.random() * Math.PI * 2;
+          this.vWobble = 0.04 + Math.random() * 0.06;
+          this.opacity = 0.95;
+        }
+        update() {
+          this.wobble += this.vWobble;
+          this.rotation += this.vRot;
+          this.x += this.vx + Math.sin(this.wobble) * 1.1;
+          this.y += this.vy;
+          if (this.y > innerHeight - 100) this.opacity -= 0.02;
+          return this.y <= innerHeight + 30 && this.opacity > 0;
+        }
+        draw(c) {
+          c.save();
+          c.translate(this.x, this.y);
+          c.rotate((this.rotation * Math.PI) / 180);
+          c.scale(Math.cos(this.wobble), 1);
+          c.globalAlpha = Math.max(0, this.opacity);
+          c.fillStyle = this.color;
+          if (this.type === 'ribbon') {
+            const w = this.size, h = this.size * 0.55;
+            c.beginPath();
+            if (c.roundRect) c.roundRect(-w / 2, -h / 2, w, h, 2);
+            else c.rect(-w / 2, -h / 2, w, h);
+            c.fill();
+          } else {
+            const r = this.size * 0.7;
+            c.beginPath();
+            for (let i = 0; i < 8; i++) {
+              const rad = (i * Math.PI) / 4;
+              const dist = i % 2 === 0 ? r : r * 0.35;
+              const px = Math.cos(rad) * dist, py = Math.sin(rad) * dist;
+              if (i === 0) c.moveTo(px, py);
+              else c.lineTo(px, py);
+            }
+            c.closePath();
+            c.fill();
+          }
+          c.restore();
+        }
+      }
+
+      function celebrate() {
+        if (!ensureCv() || reduceMotion()) return;
+        skyParts = [];
+        for (let i = 0; i < 75; i++) {
+          skyParts.push(new SkyParticle());
+        }
+        if (skyRafId) cancelAnimationFrame(skyRafId);
+        function loop() {
+          if (!ctx) return;
+          ctx.clearRect(0, 0, cv.width, cv.height);
+          skyParts = skyParts.filter(p => {
+            const alive = p.update();
+            if (alive) p.draw(ctx);
+            return alive;
+          });
+          if (skyParts.length > 0) {
+            skyRafId = requestAnimationFrame(loop);
+          } else {
+            ctx.clearRect(0, 0, cv.width, cv.height);
+            skyRafId = 0;
+          }
+        }
+        loop();
+      }
+
+      function stopCelebration() {
+        if (skyRafId) { cancelAnimationFrame(skyRafId); skyRafId = 0; }
+        skyParts = [];
+        if (ctx && cv) ctx.clearRect(0, 0, cv.width, cv.height);
+      }
+
       function spawn(n, colors, spread) {
         if (!ensureCv()) return;
         const C = (colors && colors.length) ? colors : PALETTE;
@@ -4086,6 +4417,7 @@
         get soundOn() { return store.on; },
         setOn(v) { store.on = !!v; try { localStorage.setItem('satbank:sound', store.on ? 'on' : 'off'); } catch (e) { } },
         confetti(n, colors) { try { if (!reduceMotion()) spawn(n || 80, colors); } catch (e) { } },
+        celebrate, stopCelebration,
         burst, rankUp,
       };
     })();

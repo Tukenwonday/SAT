@@ -1113,7 +1113,11 @@ function wireChallengeUI() {
   const ex = $("challexit");
   if (ex) ex.onclick = () => exitChallenge();
   const ec = $("endclose");
-  if (ec) ec.onclick = () => { $("ov-challend").classList.remove("open"); exitChallenge(); };
+  if (ec) ec.onclick = () => {
+    $("ov-challend").classList.remove("open");
+    if (FX() && FX().stopCelebration) FX().stopCelebration();
+    exitChallenge();
+  };
   const ia = $("invite-accept"), idc = $("invite-decline");
   if (ia) ia.onclick = () => acceptChallenge().catch(() => {});
   if (idc) idc.onclick = () => declineChallenge().catch(() => {});
@@ -1876,16 +1880,44 @@ function finishSession(s) {
   exitBattleView();
   const players = s.players || [s.host, s.guest];
   const n = s.totalQuestions || (s.questionIds || []).length;
+  const avg = a => a && a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length / 100) / 10 + "s" : "—";
+
   if (players.length <= 2) {
     const foe = s.host === Net.name ? s.guest : s.host;
     const win = Net.myScore > Net.frScore, tie = Net.myScore === Net.frScore;
-    $("end-trophy").textContent = win ? "🏆" : tie ? "🤝" : "💪";
-    $("end-title").textContent = win ? "You win!" : tie ? "Dead even!" : foe + " wins!";
-    const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length / 100) / 10 + "s" : "—";
-    $("end-sub").textContent = `${Net.myScore}–${Net.frScore} over ${n} · avg you ${avg(Net.myTimes)} / them ${avg(Net.frTimes)}`;
-    $("end-grid").innerHTML =
-      `<div class="end-card"><b>${Net.myScore}</b><div>you</div></div>` +
-      `<div class="end-card"><b>${Net.frScore}</b><div>${esc(foe)}</div></div>`;
+    if ($("end-trophy")) $("end-trophy").textContent = win ? "🏆" : tie ? "🤝" : "💪";
+    $("end-title").textContent = win ? "You win!" : tie ? "Dead even!" : esc(foe) + " wins!";
+    if ($("end-sub")) $("end-sub").textContent = "";
+
+    $("end-grid").innerHTML = `
+      <div class="challend-matchup">
+        <div class="challend-col">
+          <div class="challend-score ${win ? 'is-winner' : ''}">${Net.myScore}</div>
+          <div class="challend-player">You</div>
+        </div>
+        <div class="challend-vs">VS</div>
+        <div class="challend-col">
+          <div class="challend-score ${!win && !tie ? 'is-winner' : ''}">${Net.frScore}</div>
+          <div class="challend-player">${esc(foe)}</div>
+        </div>
+      </div>
+    `;
+
+    const endTimes = $("end-times");
+    if (endTimes) {
+      endTimes.innerHTML = `
+        <div class="challend-time-strip">
+          <div class="challend-time-card">
+            <span class="challend-time-label">Your Pace</span>
+            <span class="challend-time-value">${avg(Net.myTimes)}</span>
+          </div>
+          <div class="challend-time-card">
+            <span class="challend-time-label">${esc(foe)}'s Pace</span>
+            <span class="challend-time-value">${avg(Net.frTimes)}</span>
+          </div>
+        </div>
+      `;
+    }
   } else {
     // 3-way (1v1v1) podium
     const ranked = [...players].sort((a, b) => (Net.playerScores[b] || 0) - (Net.playerScores[a] || 0));
@@ -1894,32 +1926,65 @@ function finishSession(s) {
     const win = winners.includes(Net.name);
     const tie = winners.length > 1;
 
-    $("end-trophy").textContent = win ? (tie ? "🤝" : "🏆") : "💪";
+    if ($("end-trophy")) $("end-trophy").textContent = win ? (tie ? "🤝" : "🏆") : "💪";
     $("end-title").textContent = win
-      ? (tie ? "Tie for 1st place!" : "You win!")
-      : (tie ? "Tie for 1st: " + winners.join(" & ") : ranked[0] + " wins!");
+      ? (tie ? "Dead even!" : "You win!")
+      : (tie ? "Tie: " + winners.map(esc).join(" & ") : esc(ranked[0]) + " wins!");
+    if ($("end-sub")) $("end-sub").textContent = "";
 
-    const avg = a => a && a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length / 100) / 10 + "s" : "—";
-    $("end-sub").textContent = `${n} questions · 3-Way Battle · Your avg ${avg(Net.myTimes)}`;
+    // Podium layout: 2nd place on left, 1st (winner) in center, 3rd place on right
+    const p1 = ranked[0], p2 = ranked[1] || ranked[0], p3 = ranked[2] || ranked[1] || ranked[0];
+    const s1 = Net.playerScores[p1] || 0;
+    const s2 = Net.playerScores[p2] || 0;
+    const s3 = Net.playerScores[p3] || 0;
 
-    const medals = ["🥇", "🥈", "🥉"];
-    $("end-grid").innerHTML = ranked.map((p, idx) => {
-      const isMe = p === Net.name;
-      const sc = Net.playerScores[p] || 0;
-      const medal = medals[idx] || "";
-      return `<div class="end-card" style="${isMe ? 'border:2px solid var(--blue);background:rgba(37,99,235,0.08);' : ''}">` +
-        `<div style="font-size:18px;margin-bottom:2px">${medal}</div>` +
-        `<b>${sc}</b>` +
-        `<div style="font-weight:${isMe ? '700' : '500'}">${isMe ? 'you' : esc(p)}</div></div>`;
-    }).join("");
+    $("end-grid").innerHTML = `
+      <div class="challend-podium">
+        <div class="challend-podium-col ${p2 === ranked[0] && tie ? 'winner' : ''}">
+          <div class="challend-score ${p2 === ranked[0] && tie ? 'is-winner' : ''}">${s2}</div>
+          <div class="challend-player">${p2 === Net.name ? 'You' : esc(p2)}</div>
+        </div>
+        <div class="challend-podium-col winner">
+          <div class="challend-score is-winner">${s1}</div>
+          <div class="challend-player">${p1 === Net.name ? 'You' : esc(p1)}</div>
+        </div>
+        <div class="challend-podium-col">
+          <div class="challend-score">${s3}</div>
+          <div class="challend-player">${p3 === Net.name ? 'You' : esc(p3)}</div>
+        </div>
+      </div>
+    `;
+
+    const endTimes = $("end-times");
+    if (endTimes) {
+      endTimes.innerHTML = `
+        <div class="challend-time-strip three-way">
+          ${players.slice(0, 3).map(p => {
+            const isMe = p === Net.name;
+            const pace = isMe ? avg(Net.myTimes) : (Net.playerTimes && Net.playerTimes[p] ? avg(Net.playerTimes[p]) : "—");
+            return `
+              <div class="challend-time-card">
+                <span class="challend-time-label">${isMe ? 'Your Pace' : esc(p) + "'s Pace"}</span>
+                <span class="challend-time-value">${pace}</span>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
   }
   $("ov-challend").classList.add("open");
   if (FX()) {
-    const win = $("end-title").textContent.includes("You win");
-    const tie = $("end-title").textContent.includes("Tie") || $("end-title").textContent.includes("Dead even");
-    if (win) { FX().sound("fanfare"); FX().burst("perfect"); }
-    else if (tie) FX().sound("tada");
-    else FX().sound("neutral");
+    const isWin = $("end-title").textContent.includes("You win");
+    const isTie = $("end-title").textContent.includes("Dead even") || $("end-title").textContent.includes("Tie");
+    if (isWin) {
+      FX().sound("fanfare");
+      if (FX().celebrate) FX().celebrate();
+    } else if (isTie) {
+      FX().sound("tie");
+    } else {
+      FX().sound("neutral");
+    }
   }
   if (Net.socket && Net.socket.connected) Net.socket.emit("session:leave", { id: s.id });
   Net.session = null;
