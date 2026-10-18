@@ -637,8 +637,8 @@ function injectPinBox() {
   inp.placeholder = "PIN";
   inp.autocomplete = "current-password";
   inp.title = "Your name PIN — prevents impersonation";
-  inp.style.cssText = "padding:8px 10px;font-size:14px;border:1.5px solid #333;border-radius:12px;" +
-    "font-family:var(--sans);max-width:80px;";
+  inp.style.cssText = "padding:5px 8px;font-size:13px;border:1.5px solid #333;border-radius:10px;" +
+    "font-family:var(--sans);max-width:70px;";
   inp.addEventListener("keydown", ev => ev.stopPropagation());
   const save = $("namesave");
   save.parentNode.insertBefore(inp, save);
@@ -648,8 +648,8 @@ function injectPinBox() {
   key.type = "button";
   key.textContent = "🔑";
   key.title = "Change PIN";
-  key.style.cssText = "border:1.5px solid #333;background:#fff;border-radius:12px;" +
-    "padding:8px 10px;font-size:14px;cursor:pointer;display:none;";
+  key.style.cssText = "border:1.5px solid #333;background:#fff;border-radius:10px;" +
+    "padding:5px 8px;font-size:13px;cursor:pointer;display:none;";
   save.parentNode.insertBefore(key, save.nextSibling);
   key.addEventListener("click", changePinFlow);
   // Mirror the name box visibility (index.html hides nameinput/namesave when signed in).
