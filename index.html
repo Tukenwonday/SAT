@@ -2149,26 +2149,14 @@
       flex: 1;
       min-height: 0;
       overflow-y: auto;
-      padding-right: 4px;
-      scrollbar-width: thin;
-      scrollbar-color: #cbd5e1 transparent;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
     }
 
     #hist-main::-webkit-scrollbar {
-      width: 5px;
-    }
-
-    #hist-main::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    #hist-main::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
-      border-radius: 999px;
-    }
-
-    html[data-theme="dark"] #hist-main::-webkit-scrollbar-thumb {
-      background: #334155;
+      display: none;
+      width: 0;
+      height: 0;
     }
 
     @keyframes row-in {
@@ -3161,10 +3149,8 @@
 
   <div class="overlay" id="ov-challenge">
     <div class="modal" style="max-width:560px">
-      <div class="chall-kicker">Live Duel / 1v1v1</div>
       <h2 class="chall-title">Challenge friends</h2>
       <div class="chall-rule"></div>
-      <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Select 1 or 2 online opponents for a duel or 3-way match:</div>
       <input type="hidden" id="chall-guest" value="">
       <div id="opp-list"></div>
       <div class="fsec">Questions</div>

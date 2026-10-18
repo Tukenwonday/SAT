@@ -959,111 +959,150 @@ function renderDuelItem(s, quiet, i) {
   }
 }
 
-// Duels: live challenges + finished challenges with infinite scroll
-async function renderDuels(box, quiet) {
-  if (!quiet) {
-    box.innerHTML = '<div class="skel" style="height:100px"></div>';
-    Net._duelOffset = 0;
-    Net._duelHasMore = true;
-    Net._duelLoading = false;
-  }
+// Duels: live challenges + finished challenges with smooth infinite scroll
+async function renderDuels(box) {
+  box.innerHTML = '<div class="skel" style="height:100px"></div>';
+  Net._duelOffset = 0;
+  Net._duelHasMore = true;
+  Net._duelLoading = false;
+  Net._loadedDuelIds = new Set();
+
   const r = await api("/api/sessions/history?user=" + encodeURIComponent(Net.name) +
-    "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends&limit=10&offset=" + (quiet ? 0 : (Net._duelOffset || 0)));
+    "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends&limit=10&offset=0");
   if (!r || !r.ok) {
-    if (!quiet) box.innerHTML = "<p>Couldn't load duels (offline?).</p>";
+    box.innerHTML = "<p>Couldn't load duels (offline?).</p>";
     return;
   }
   const live = r.live || [];
-  const list = (r.sessions || []).filter(s => s.status === "finished");
-  if (!live.length && !list.length) { box.innerHTML = "<p class='hempty'>No duels yet — send a ⚔️ challenge!</p>"; return; }
-
-  // Silent in-place update for live scores on auto-refresh: no DOM replacement, no flicker or repeated animations
-  if (quiet && $("live-duels-wrap")) {
-    const liveIds = live.map(s => s.id).join(",");
-    if (box.dataset.liveIds === liveIds) {
-      live.forEach(s => {
-        const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
-        const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
-        const scoreEl = $("live-sc-" + s.id);
-        const subEl = $("live-sub-" + s.id);
-        if (players.length > 2) {
-          const mid = players.map(p => `<span style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">${esc(p)}</span>: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
-          if (scoreEl && scoreEl.innerHTML !== mid) scoreEl.innerHTML = mid;
-          const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">3-Way Live ⚔️</b>`;
-          if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
-        } else {
-          const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
-          const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
-          const mid = hs.ok + "–" + gs.ok;
-          if (scoreEl && scoreEl.textContent !== mid) scoreEl.textContent = mid;
-          const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b>`;
-          if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
-        }
-      });
-      return;
-    }
+  const sessions = r.sessions || [];
+  const list = sessions.filter(s => s.status === "finished");
+  if (!live.length && !list.length) {
+    box.innerHTML = "<p class='hempty'>No duels yet — send a ⚔️ challenge!</p>";
+    return;
   }
 
-  box.dataset.liveIds = live.map(s => s.id).join(",");
-  const anim = quiet ? ' style="animation:none"' : '';
+  list.forEach(s => Net._loadedDuelIds.add(s.id));
+  Net._duelOffset = sessions.length;
+  Net._duelHasMore = r.hasMore && sessions.length >= 10;
+
   let h = "";
   if (live.length) {
-    h += `<div id="live-duels-wrap"><div class="dlive-head"><span class="dlive-dot"></span> LIVE DUELS</div>`;
-    live.forEach(s => {
-      const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
-      const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
-      if (players.length > 2) {
-        const mid = players.map(p => `<span style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">${esc(p)}</span>: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
-        h += `<div class="drow dlive-row" id="live-row-${s.id}"${anim}>` +
-          `<div class="dmatch" style="justify-content:center;gap:10px;font-size:13px;font-weight:700">` +
-          `<span class="dlive-score" id="live-sc-${s.id}">${mid}</span></div>` +
-          `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">3-Way Live ⚔️</b></div></div>`;
-      } else {
-        const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
-        const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
-        const mid = hs.ok + "–" + gs.ok;
-        h += `<div class="drow dlive-row" id="live-row-${s.id}"${anim}>` +
-          `<div class="dmatch"><span class="nm left" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.host)}')">${esc(s.host)}</span>` +
-          `<span class="mid dlive-score" id="live-sc-${s.id}">${mid}</span>` +
-          `<span class="nm right" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.guest)}')">${esc(s.guest)}</span></div>` +
-          `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b></div></div>`;
-      }
-    });
-    h += `</div>`;
+    h += `<div id="live-duels-wrap">${renderLiveDuelsHtml(live)}</div>`;
   }
   if (list.length) {
-    h += `<div class="dsep">RECENT COMPLETED</div>`;
     h += `<div id="duels-list">`;
     list.forEach((s, i) => {
-      h += renderDuelItem(s, quiet, i);
+      h += renderDuelItem(s, false, i);
     });
     h += `</div>`;
-    h += `<div id="duels-more"></div>`;
+    h += `<div id="duels-more">`;
+    if (!Net._duelHasMore) {
+      h += `<div class="dmore-end">All duels loaded</div>`;
+    }
+    h += `</div>`;
   }
   box.innerHTML = h;
 
-  Net._duelHasMore = r.hasMore && list.length >= 10;
-
-  // Infinite scroll: when user reaches near the bottom of #hist-main, fetch next 10 duels
+  // Smooth throttled infinite scroll
+  let ticking = false;
   box.onscroll = () => {
-    if (Net._duelLoading || !Net._duelHasMore) return;
-    if (box.scrollTop + box.clientHeight >= box.scrollHeight - 50) {
-      loadMoreDuels(box);
-    }
+    if (ticking || Net._duelLoading || !Net._duelHasMore) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      ticking = false;
+      if (Net._duelLoading || !Net._duelHasMore) return;
+      const distFromBottom = box.scrollHeight - box.scrollTop - box.clientHeight;
+      if (distFromBottom < 120) {
+        loadMoreDuels(box);
+      }
+    });
   };
 
-  // Auto-refresh while duels tab is open to show live duel scores update
+  // Auto-refresh ONLY live duel scores while modal is open: NEVER touch finished duels list
   if (!Net._duelsTimer) {
-    Net._duelsTimer = setInterval(() => {
+    Net._duelsTimer = setInterval(async () => {
       const ov = $("ov-history");
-      if (ov && ov.classList.contains("open") && Net._histTab === "duels") {
-        renderDuels(box, true);
-      } else {
+      if (!ov || !ov.classList.contains("open") || Net._histTab !== "duels") {
         clearInterval(Net._duelsTimer);
         Net._duelsTimer = null;
+        return;
       }
+      try {
+        const liveRes = await api("/api/sessions/history?user=" + encodeURIComponent(Net.name) +
+          "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends&limit=1&offset=0");
+        if (liveRes && liveRes.ok) {
+          updateLiveDuelsInPlace(box, liveRes.live || []);
+        }
+      } catch (e) {}
     }, 3500);
   }
+}
+
+function renderLiveDuelsHtml(live) {
+  let h = `<div class="dlive-head"><span class="dlive-dot"></span> LIVE DUELS</div>`;
+  live.forEach(s => {
+    const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
+    const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
+    if (players.length > 2) {
+      const mid = players.map(p => `<span style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">${esc(p)}</span>: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
+      h += `<div class="drow dlive-row" id="live-row-${s.id}" style="animation:none">` +
+        `<div class="dmatch" style="justify-content:center;gap:10px;font-size:13px;font-weight:700">` +
+        `<span class="dlive-score" id="live-sc-${s.id}">${mid}</span></div>` +
+        `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">3-Way Live ⚔️</b></div></div>`;
+    } else {
+      const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
+      const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
+      const mid = hs.ok + "–" + gs.ok;
+      h += `<div class="drow dlive-row" id="live-row-${s.id}" style="animation:none">` +
+        `<div class="dmatch"><span class="nm left" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.host)}')">${esc(s.host)}</span>` +
+        `<span class="mid dlive-score" id="live-sc-${s.id}">${mid}</span>` +
+        `<span class="nm right" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.guest)}')">${esc(s.guest)}</span></div>` +
+        `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b></div></div>`;
+    }
+  });
+  return h;
+}
+
+function updateLiveDuelsInPlace(box, live) {
+  let wrap = $("live-duels-wrap");
+  if (!live || !live.length) {
+    if (wrap) wrap.remove();
+    return;
+  }
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.id = "live-duels-wrap";
+    wrap.innerHTML = renderLiveDuelsHtml(live);
+    const duelsList = $("duels-list");
+    if (duelsList) box.insertBefore(wrap, duelsList);
+    else box.prepend(wrap);
+    return;
+  }
+  const currentIds = Array.from(wrap.querySelectorAll(".dlive-row")).map(el => el.id.replace("live-row-", "")).join(",");
+  const newIds = live.map(s => s.id).join(",");
+  if (currentIds !== newIds) {
+    wrap.innerHTML = renderLiveDuelsHtml(live);
+    return;
+  }
+  live.forEach(s => {
+    const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
+    const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
+    const scoreEl = $("live-sc-" + s.id);
+    const subEl = $("live-sub-" + s.id);
+    if (players.length > 2) {
+      const mid = players.map(p => `<span style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">${esc(p)}</span>: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
+      if (scoreEl && scoreEl.innerHTML !== mid) scoreEl.innerHTML = mid;
+      const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">3-Way Live ⚔️</b>`;
+      if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
+    } else {
+      const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
+      const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
+      const mid = hs.ok + "–" + gs.ok;
+      if (scoreEl && scoreEl.textContent !== mid) scoreEl.textContent = mid;
+      const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b>`;
+      if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
+    }
+  });
 }
 
 async function loadMoreDuels(box) {
@@ -1071,24 +1110,31 @@ async function loadMoreDuels(box) {
   Net._duelLoading = true;
   const moreEl = $("duels-more");
   if (moreEl) moreEl.innerHTML = '<div class="dmore-spin">Loading older duels…</div>';
-  Net._duelOffset = (Net._duelOffset || 0) + 10;
+
+  const curOffset = Net._duelOffset || 0;
   const r = await api("/api/sessions/history?user=" + encodeURIComponent(Net.name) +
-    "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends&limit=10&offset=" + Net._duelOffset);
+    "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends&limit=10&offset=" + curOffset);
+
   Net._duelLoading = false;
   if (!r || !r.ok) {
     if (moreEl) moreEl.innerHTML = '';
     return;
   }
-  const list = (r.sessions || []).filter(s => s.status === "finished");
+  const sessions = r.sessions || [];
+  Net._duelOffset = curOffset + sessions.length;
+
+  const newFinished = sessions.filter(s => s.status === "finished" && !Net._loadedDuelIds.has(s.id));
   const listEl = $("duels-list");
-  if (listEl && list.length) {
+  if (listEl && newFinished.length) {
     let addHtml = "";
-    list.forEach((s, i) => {
+    newFinished.forEach((s, i) => {
+      Net._loadedDuelIds.add(s.id);
       addHtml += renderDuelItem(s, true, i);
     });
     listEl.insertAdjacentHTML("beforeend", addHtml);
   }
-  if (!r.hasMore || list.length < 10) {
+
+  if (!r.hasMore || sessions.length < 10) {
     Net._duelHasMore = false;
     if (moreEl) moreEl.innerHTML = '<div class="dmore-end">All duels loaded</div>';
   } else {
