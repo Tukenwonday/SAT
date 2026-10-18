@@ -504,6 +504,128 @@ app.get("/api/sessions/history", async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
 });
 
+// Player profile metrics & stats derived from ledger and finished sessions
+app.get("/api/users/:name/profile", async (req, res) => {
+  try {
+    const name = cleanName(req.params.name);
+    if (!name) return res.status(400).json({ ok: false, error: "bad-name" });
+
+    // 1. Overall accuracy and total distinct questions solved from attempts ledger
+    const attRes = await pool.query(
+      `SELECT
+         COUNT(*)::int AS total_attempts,
+         COUNT(DISTINCT question_id)::int AS distinct_solved,
+         COUNT(*) FILTER (WHERE is_correct)::int AS correct_attempts
+       FROM attempts
+       WHERE user_name = $1`,
+      [name]
+    );
+    const att = attRes.rows[0] || {};
+    const totalAttempts = att.total_attempts || 0;
+    const correctAttempts = att.correct_attempts || 0;
+    const questionsSolved = att.distinct_solved || 0;
+    const accuracy = totalAttempts > 0 ? +((correctAttempts / totalAttempts) * 100).toFixed(1) : 0;
+
+    // 2. Finished sessions involving this user
+    const sessRes = await pool.query(
+      `SELECT id, host, guest, players, started_at, finished_at, total_questions, created_at
+       FROM sessions
+       WHERE status = 'finished'
+         AND ($1 = ANY(COALESCE(players, ARRAY[host, guest])) OR host = $1 OR guest = $1)
+       ORDER BY created_at ASC`,
+      [name]
+    );
+    const sessions = sessRes.rows || [];
+    const sessionIds = sessions.map(s => s.id);
+
+    // 3. Scores for these sessions derived from the attempts ledger
+    const sc = {};
+    if (sessionIds.length) {
+      const scRes = await pool.query(
+        `SELECT session_id, user_name,
+                COUNT(*) FILTER (WHERE is_correct)::int AS ok,
+                COUNT(*)::int AS tot
+         FROM attempts
+         WHERE session_id = ANY($1)
+         GROUP BY session_id, user_name`,
+        [sessionIds]
+      );
+      for (const row of scRes.rows) {
+        if (!sc[row.session_id]) sc[row.session_id] = {};
+        sc[row.session_id][row.user_name] = { ok: row.ok, tot: row.tot };
+      }
+    }
+
+    let wins = 0;
+    let losses = 0;
+    let ties = 0;
+    let currentStreak = 0;
+    let bestStreak = 0;
+    let totalDuelSeconds = 0;
+    let totalDuelQuestions = 0;
+
+    for (const s of sessions) {
+      const plist = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
+      if (!plist.includes(name)) continue;
+
+      const scores = sc[s.id] || {};
+      const myScore = (scores[name] && scores[name].ok) || 0;
+
+      let maxOtherScore = -1;
+      for (const p of plist) {
+        if (p === name) continue;
+        const oppScore = (scores[p] && scores[p].ok) || 0;
+        if (oppScore > maxOtherScore) maxOtherScore = oppScore;
+      }
+
+      if (myScore > maxOtherScore) {
+        wins++;
+        currentStreak++;
+        if (currentStreak > bestStreak) bestStreak = currentStreak;
+      } else if (myScore === maxOtherScore) {
+        ties++;
+        currentStreak = 0;
+      } else {
+        losses++;
+        currentStreak = 0;
+      }
+
+      if (s.started_at && s.finished_at && s.total_questions > 0) {
+        const durMs = new Date(s.finished_at).getTime() - new Date(s.started_at).getTime();
+        if (durMs > 1000 && durMs < 1000 * 60 * 60) {
+          totalDuelSeconds += (durMs / 1000);
+          totalDuelQuestions += s.total_questions;
+        }
+      }
+    }
+
+    const totalDuels = wins + losses + ties;
+    const winRate = totalDuels > 0 ? Math.round((wins / totalDuels) * 100) : 0;
+    const avgSpeed = totalDuelQuestions > 0 ? (totalDuelSeconds / totalDuelQuestions).toFixed(1) + "s" : "—";
+
+    res.json({
+      ok: true,
+      profile: {
+        name,
+        winRate,
+        wins,
+        losses,
+        ties,
+        totalDuels,
+        avgSpeed,
+        bestStreak,
+        currentStreak,
+        accuracy,
+        questionsSolved,
+      }
+    });
+  } catch (e) {
+    console.error("profile error:", e.message);
+    res.status(500).json({ ok: false, error: "server" });
+  }
+});
+
+
 // Change PIN: proves the old one, sets a new one (min 4 chars).
 app.post("/api/users/:name/pin", async (req, res) => {
   try {

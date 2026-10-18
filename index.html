@@ -2500,6 +2500,240 @@
     #nameinput {
       box-shadow: inset 0 1px 3px rgba(0, 0, 0, .07);
     }
+
+    /* ── Player Profile Modal ── */
+    #ov-profile .profile-modal {
+      width: 100%;
+      max-width: 420px;
+      background: #ffffff;
+      border-radius: 20px;
+      padding: 28px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+      position: relative;
+      cursor: default;
+      transform: scale(0.96);
+      transition: transform .2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    #ov-profile.open .profile-modal {
+      transform: scale(1);
+    }
+
+    html[data-theme="dark"] #ov-profile .profile-modal {
+      background: #1e2238;
+      border: 1px solid #33395b;
+      color: #f1f5f9;
+    }
+
+    .prof-header-top {
+      text-align: center;
+      margin-bottom: 22px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .prof-player-name {
+      font-size: 28px;
+      font-weight: 800;
+      color: #111827;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+    }
+
+    html[data-theme="dark"] .prof-player-name {
+      color: #f8fafc;
+    }
+
+    .prof-streak-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      color: #c2410c;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    html[data-theme="dark"] .prof-streak-badge {
+      background: rgba(234, 88, 12, 0.15);
+      border-color: rgba(234, 88, 12, 0.35);
+      color: #fb923c;
+    }
+
+    .prof-section-head {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #9ca3af;
+      margin-bottom: 10px;
+    }
+
+    html[data-theme="dark"] .prof-section-head {
+      color: #818cf8;
+    }
+
+    .prof-stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .prof-stat-box {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    html[data-theme="dark"] .prof-stat-box {
+      background: #16192b;
+      border-color: #2b304f;
+    }
+
+    .prof-stat-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #6b7280;
+      margin-bottom: 4px;
+    }
+
+    html[data-theme="dark"] .prof-stat-label {
+      color: #94a3b8;
+    }
+
+    .prof-stat-num {
+      font-size: 24px;
+      font-weight: 800;
+      color: #111827;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+    }
+
+    html[data-theme="dark"] .prof-stat-num {
+      color: #f8fafc;
+    }
+
+    .prof-stat-sub {
+      font-size: 12px;
+      color: #6b7280;
+      font-weight: 500;
+      margin-top: 4px;
+    }
+
+    html[data-theme="dark"] .prof-stat-sub {
+      color: #94a3b8;
+    }
+
+    .prof-accuracy-box {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+    }
+
+    html[data-theme="dark"] .prof-accuracy-box {
+      background: #16192b;
+      border-color: #2b304f;
+    }
+
+    .prof-acc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+
+    .prof-acc-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #6b7280;
+    }
+
+    html[data-theme="dark"] .prof-acc-label {
+      color: #94a3b8;
+    }
+
+    .prof-acc-num {
+      font-size: 18px;
+      font-weight: 800;
+      color: #111827;
+    }
+
+    html[data-theme="dark"] .prof-acc-num {
+      color: #f8fafc;
+    }
+
+    .prof-acc-track {
+      height: 6px;
+      background: #e5e7eb;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    html[data-theme="dark"] .prof-acc-track {
+      background: #2b304f;
+    }
+
+    .prof-acc-fill {
+      height: 100%;
+      background: #2563eb;
+      border-radius: 999px;
+      transition: width 0.4s ease;
+    }
+
+    html[data-theme="dark"] .prof-acc-fill {
+      background: #3b82f6;
+    }
+
+    .prof-solved-box {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    html[data-theme="dark"] .prof-solved-box {
+      background: #16192b;
+      border-color: #2b304f;
+    }
+
+    .prof-solved-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #6b7280;
+    }
+
+    html[data-theme="dark"] .prof-solved-label {
+      color: #94a3b8;
+    }
+
+    .prof-solved-num {
+      font-size: 18px;
+      font-weight: 800;
+      color: #111827;
+    }
+
+    html[data-theme="dark"] .prof-solved-num {
+      color: #f8fafc;
+    }
   </style>
 </head>
 
@@ -2689,6 +2923,60 @@
       <div id="end-sub" style="font-size:15px;margin:6px 0 12px"></div>
       <div id="end-grid" style="display:flex;gap:10px;justify-content:center;margin-bottom:8px"></div>
       <div class="mrow" style="justify-content:center"><button class="btn-blue" id="endclose">Keep practicing</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="ov-profile">
+    <div class="profile-modal" id="prof-card" onclick="event.stopPropagation()">
+      <div class="prof-header-top">
+        <h2 class="prof-player-name" id="prof-name">—</h2>
+        <div class="prof-streak-badge" id="prof-streak">
+          <span>🔥</span> <span id="prof-streak-text">0 Win Streak</span>
+        </div>
+      </div>
+
+      <div class="prof-section-head">Duel Statistics</div>
+      
+      <div class="prof-stats-grid">
+        <div class="prof-stat-box">
+          <div class="prof-stat-label">Win Rate</div>
+          <div class="prof-stat-num" id="prof-winrate">0%</div>
+          <div class="prof-stat-sub" id="prof-sub-winrate">0 W · 0 L</div>
+        </div>
+
+        <div class="prof-stat-box">
+          <div class="prof-stat-label">Duels Won</div>
+          <div class="prof-stat-num" id="prof-won">0</div>
+          <div class="prof-stat-sub" id="prof-sub-won">0 played</div>
+        </div>
+
+        <div class="prof-stat-box">
+          <div class="prof-stat-label">Average Speed</div>
+          <div class="prof-stat-num" id="prof-speed">—</div>
+          <div class="prof-stat-sub">per question</div>
+        </div>
+
+        <div class="prof-stat-box">
+          <div class="prof-stat-label">Best Streak</div>
+          <div class="prof-stat-num" id="prof-best-streak">0</div>
+          <div class="prof-stat-sub">consecutive</div>
+        </div>
+      </div>
+
+      <div class="prof-accuracy-box">
+        <div class="prof-acc-header">
+          <div class="prof-acc-label">Overall Accuracy</div>
+          <div class="prof-acc-num" id="prof-acc">0%</div>
+        </div>
+        <div class="prof-acc-track">
+          <div class="prof-acc-fill" id="prof-bar-acc" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <div class="prof-solved-box">
+        <div class="prof-solved-label">Questions Solved</div>
+        <div class="prof-solved-num" id="prof-solved">0</div>
       </div>
     </div>
   </div>
@@ -3177,7 +3465,7 @@
     }
     $('whoami').addEventListener('dblclick', editName);
     $('whoami').style.cursor = 'pointer';
-    $('whoami').title = 'Double-click to change your name';
+    $('whoami').title = 'Click to view profile · Double-click to change name';
     /* Tiny toast helper (used before backend.js loads too). */
     function toast(msg, ms) {
       const box = $('toasts'); if (!box) return;

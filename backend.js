@@ -591,6 +591,7 @@ function rosterRow(person, online) {
   const row = document.createElement("div");
   row.className = "roster-row" + (online ? " on" : "") + (inDuel ? " in-duel" : "");
   row.dataset.name = person.name;
+  row.style.cursor = "pointer";
   row.innerHTML = '<span class="dot"></span><span class="rname"></span>' +
     '<span class="rtoday"><b class="count-tick">0</b> today</span>';
   const nm = row.querySelector(".rname");
@@ -600,8 +601,16 @@ function rosterRow(person, online) {
     badge.className = "rduel-tag";
     badge.textContent = `⚔️ vs ${person.duel.vs}`;
     nm.appendChild(badge);
-    row.title = `${person.name} is in a live duel against ${person.duel.vs}`;
+    row.title = `${person.name} is in a live duel against ${person.duel.vs} · Click to view profile`;
+  } else {
+    row.title = `Click to view ${person.name}'s profile`;
   }
+  row.addEventListener("click", ev => {
+    ev.stopPropagation();
+    const p = $("rosterpanel");
+    if (p) p.style.display = "none";
+    Net.openProfile(person.name);
+  });
   const tick = row.querySelector(".count-tick");
   const today = Net.todayCounts[person.name] || 0;
   tick.textContent = today;
@@ -647,11 +656,26 @@ function injectPinBox() {
   const sync = () => { inp.style.display = ni.style.display; key.style.display = ni.style.display; };
   new MutationObserver(sync).observe(ni, { attributes: true, attributeFilter: ["style"] });
   sync();
-  // Double-click name: stock edit-name, plus reveal the PIN changer too.
+  // Single-click name: open profile. Double-click: edit name + reveal PIN changer.
   const who = $("whoami");
-  if (who && window.editName) {
-    who.removeEventListener("dblclick", window.editName);
-    who.addEventListener("dblclick", () => { window.editName(); sync(); });
+  if (who && !who._wiredProfile) {
+    who._wiredProfile = true;
+    let whoClickTimer = null;
+    who.addEventListener("click", ev => {
+      if (whoClickTimer) return;
+      whoClickTimer = setTimeout(() => {
+        whoClickTimer = null;
+        if (Net.name) Net.openProfile(Net.name);
+      }, 250);
+    });
+    if (window.editName) {
+      who.removeEventListener("dblclick", window.editName);
+      who.addEventListener("dblclick", () => {
+        if (whoClickTimer) { clearTimeout(whoClickTimer); whoClickTimer = null; }
+        window.editName();
+        sync();
+      });
+    }
   }
 }
 function syncPinBox() {
@@ -944,7 +968,7 @@ async function renderDuels(box, quiet) {
       const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
       const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
       if (players.length > 2) {
-        const mid = players.map(p => `${esc(p)}: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
+        const mid = players.map(p => `<span style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">${esc(p)}</span>: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
         h += `<div class="drow dlive-row" id="live-row-${s.id}"${anim}>` +
           `<div class="dmatch" style="justify-content:center;gap:10px;font-size:14px;font-weight:700">` +
           `<span class="dlive-score" id="live-sc-${s.id}">${mid}</span></div>` +
@@ -954,9 +978,9 @@ async function renderDuels(box, quiet) {
         const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
         const mid = hs.ok + "–" + gs.ok;
         h += `<div class="drow dlive-row" id="live-row-${s.id}"${anim}>` +
-          `<div class="dmatch"><span class="nm left">${esc(s.host)}</span>` +
+          `<div class="dmatch"><span class="nm left" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.host)}')">${esc(s.host)}</span>` +
           `<span class="mid dlive-score" id="live-sc-${s.id}">${mid}</span>` +
-          `<span class="nm right">${esc(s.guest)}</span></div>` +
+          `<span class="nm right" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.guest)}')">${esc(s.guest)}</span></div>` +
           `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b></div></div>`;
       }
     });
@@ -975,7 +999,7 @@ async function renderDuels(box, quiet) {
       const winners = sorted.filter(p => ((s.scores && s.scores[p]) ? s.scores[p].ok : 0) === topScore);
       const tie = winners.length > 1;
       const title = tie ? `Tie (${winners.join(" & ")})` : `${sorted[0]} wins`;
-      const scoresDisplay = sorted.map(p => `${esc(p)}: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
+      const scoresDisplay = sorted.map(p => `<span style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">${esc(p)}</span>: ${(s.scores && s.scores[p]) ? s.scores[p].ok : 0}`).join(" · ");
       h += `<div class="drow"${rowAnim}>` +
         `<div class="dmatch" style="justify-content:center;gap:10px;font-size:13.5px;font-weight:700">` +
         `<span>${scoresDisplay}</span></div>` +
@@ -989,9 +1013,9 @@ async function renderDuels(box, quiet) {
       const mid = hs.ok + "–" + gs.ok;
       const title = tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins");
       h += `<div class="drow"${rowAnim}>` +
-        `<div class="dmatch"><span class="nm left${lw === "l" ? " dim" : ""}">${esc(s.host)}</span>` +
+        `<div class="dmatch"><span class="nm left${lw === "l" ? " dim" : ""}" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.host)}')">${esc(s.host)}</span>` +
         `<span class="mid">${mid}</span>` +
-        `<span class="nm right${lw === "r" ? " dim" : ""}">${esc(s.guest)}</span></div>` +
+        `<span class="nm right${lw === "r" ? " dim" : ""}" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.guest)}')">${esc(s.guest)}</span></div>` +
         `<div class="dsub">${esc(day)}</div>` +
         `<div class="dsub2">${s.totalQuestions} questions · ${esc(title)}</div></div>`;
     }
@@ -1037,6 +1061,46 @@ function wireChallengeUI() {
   wireChatKeys();
 }
 Net.inChallenge = () => !!(Net.session && Net.session.status === "active");
+
+Net.openProfile = async function (name) {
+  name = cleanName(name);
+  if (!name) return;
+  const ov = $("ov-profile");
+  if (!ov) return;
+
+  // Set initial placeholders
+  if ($("prof-name")) $("prof-name").textContent = name;
+  if ($("prof-streak-text")) $("prof-streak-text").textContent = "…";
+  if ($("prof-winrate")) $("prof-winrate").textContent = "…";
+  if ($("prof-sub-winrate")) $("prof-sub-winrate").textContent = "…";
+  if ($("prof-won")) $("prof-won").textContent = "…";
+  if ($("prof-sub-won")) $("prof-sub-won").textContent = "…";
+  if ($("prof-speed")) $("prof-speed").textContent = "…";
+  if ($("prof-best-streak")) $("prof-best-streak").textContent = "…";
+  if ($("prof-acc")) $("prof-acc").textContent = "…";
+  if ($("prof-bar-acc")) $("prof-bar-acc").style.width = "0%";
+  if ($("prof-solved")) $("prof-solved").textContent = "…";
+
+  ov.classList.add("open");
+
+  const r = await api("/api/users/" + encodeURIComponent(name) + "/profile");
+  if (!r || !r.ok || !r.profile) {
+    toast("Couldn't load profile for " + name);
+    return;
+  }
+  const p = r.profile;
+  if ($("prof-name")) $("prof-name").textContent = p.name;
+  if ($("prof-streak-text")) $("prof-streak-text").textContent = (p.currentStreak || 0) + " Win Streak";
+  if ($("prof-winrate")) $("prof-winrate").textContent = p.winRate + "%";
+  if ($("prof-sub-winrate")) $("prof-sub-winrate").textContent = (p.wins || 0) + " W · " + (p.losses || 0) + " L";
+  if ($("prof-won")) $("prof-won").textContent = p.wins || 0;
+  if ($("prof-sub-won")) $("prof-sub-won").textContent = (p.totalDuels || 0) + " played";
+  if ($("prof-speed")) $("prof-speed").textContent = p.avgSpeed || "—";
+  if ($("prof-best-streak")) $("prof-best-streak").textContent = p.bestStreak || 0;
+  if ($("prof-acc")) $("prof-acc").textContent = (p.accuracy || 0) + "%";
+  if ($("prof-bar-acc")) $("prof-bar-acc").style.width = Math.min(100, Math.max(0, p.accuracy || 0)) + "%";
+  if ($("prof-solved")) $("prof-solved").textContent = p.questionsSolved || 0;
+};
 
 function otherName() {
   const sel = $("chall-guest");
