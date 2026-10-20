@@ -1482,13 +1482,22 @@ let pendingInvite = null;
 function showInvite(id, s) {
   pendingInvite = { id, ...s, at: Date.now() };
   const others = (s.players || []).filter(p => p !== Net.name && p !== s.host);
-  if (others.length > 0) {
-    $("invite-from").textContent = s.host + " (3-way with " + others.join(", ") + ")";
-  } else {
-    $("invite-from").textContent = s.host || "Friend";
+  const fromEl = $("invite-from");
+  const othersEl = $("invite-others");
+  if (fromEl) fromEl.textContent = s.host || "Friend";
+  if (othersEl) {
+    if (others.length > 0) {
+      othersEl.textContent = "(+ " + others.join(", ") + ")";
+      othersEl.style.display = "inline";
+    } else {
+      othersEl.textContent = "";
+      othersEl.style.display = "none";
+    }
   }
-  $("invite-n").textContent = s.totalQuestions || (s.questionIds || []).length;
-  $("invitebanner").classList.add("show");
+  const nEl = $("invite-n");
+  if (nEl) nEl.textContent = s.totalQuestions || (s.questionIds || []).length || 10;
+  const b = $("invitebanner");
+  if (b) b.classList.add("show");
   if (FX()) FX().sound("alert");
 }
 function hideInvite() {

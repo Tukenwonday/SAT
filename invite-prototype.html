@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bluebook Elite — Precision Pill Duel Invite</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@500;600;700;800;900&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0e17;
+      --ink: #0a0a0a;
+      --paper: #ffffff;
+      --paper-cream: #faf9f5;
+      --electric-blue: #2563eb;
+      --electric-blue-hover: #1d4ed8;
+      --hard-black: #0a0a0a;
+      --font-grotesk: 'Space Grotesk', system-ui, sans-serif;
+      --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: #f8fafc;
+      font-family: var(--font-body);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ── Top Prototype Toolbar ── */
+    header.proto-header {
+      position: sticky;
+      top: 0;
+      z-index: 600;
+      background: #0f172a;
+      border-bottom: 2px solid #000000;
+      box-shadow: 0 4px 0 #000000;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .proto-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-badge {
+      background: #fde047;
+      color: #000;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      padding: 4px 8px;
+      border: 2px solid #000;
+      box-shadow: 2px 2px 0 #000;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .proto-title {
+      font-family: var(--font-grotesk);
+      font-size: 16px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.01em;
+    }
+
+    .proto-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .scenario-toggle {
+      display: flex;
+      border: 2px solid #000;
+      box-shadow: 2.5px 2.5px 0 #000;
+      background: #000;
+      gap: 2px;
+    }
+
+    .scen-btn {
+      background: #1e293b;
+      color: #94a3b8;
+      border: none;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: all 0.1s ease;
+    }
+
+    .scen-btn.active {
+      background: #38bdf8;
+      color: #000;
+      font-weight: 800;
+    }
+
+    .neo-btn {
+      background: #fde047;
+      color: #000;
+      border: 2px solid #000;
+      font-family: var(--font-grotesk);
+      font-size: 12.5px;
+      font-weight: 800;
+      padding: 7px 16px;
+      cursor: pointer;
+      box-shadow: 2.5px 2.5px 0 #000;
+      transition: all 0.12s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .neo-btn:hover {
+      transform: translate(-1px, -1px);
+      box-shadow: 3.5px 3.5px 0 #000;
+    }
+
+    .neo-btn:active {
+      transform: translate(2px, 2px);
+      box-shadow: 0px 0px 0 #000;
+    }
+
+    /* ── Main SAT Simulation Area ── */
+    .viewport-container {
+      position: relative;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #ffffff;
+      color: #111;
+      min-height: calc(100vh - 65px);
+    }
+
+    .sat-header {
+      background: #0a0a0a;
+      color: #fff;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      font-size: 13px;
+      font-weight: 700;
+      border-bottom: 2px solid #000;
+    }
+
+    .sat-header-section {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .sat-timer-pill {
+      background: #18181b;
+      padding: 4px 10px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    /* Question & Passage Area */
+    .sat-body {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      padding: 36px 48px;
+      gap: 40px;
+      max-width: 1440px;
+      margin: 0 auto;
+      width: 100%;
+      opacity: 0.92;
+      user-select: none;
+    }
+
+    .passage-col {
+      padding-right: 32px;
+      border-right: 2px solid #e2e8f0;
+      line-height: 1.8;
+      font-size: 15px;
+      color: #334155;
+    }
+
+    .passage-col h3 {
+      font-family: var(--font-grotesk);
+      font-size: 17px;
+      font-weight: 800;
+      color: #0f172a;
+      margin-bottom: 12px;
+    }
+
+    .question-col {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .q-number-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2px solid #0a0a0a;
+      padding-bottom: 8px;
+      font-family: var(--font-grotesk);
+      font-weight: 800;
+      font-size: 15px;
+    }
+
+    .q-choice {
+      border: 2px solid #cbd5e1;
+      padding: 12px 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 14px;
+      color: #1e293b;
+      cursor: pointer;
+      background: #fff;
+    }
+
+    .q-letter {
+      width: 26px;
+      height: 26px;
+      border: 2px solid #0a0a0a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-grotesk);
+      font-weight: 800;
+      font-size: 13px;
+      color: #0a0a0a;
+      flex-shrink: 0;
+      background: #f8fafc;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       PRECISION PILL NEO-BRUTALIST INVITE BANNER
+       ══════════════════════════════════════════════════════════════ */
+    .invite-anchor {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 500;
+      width: auto;
+      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .invite-anchor.hidden {
+      opacity: 0;
+      transform: translate(-50%, -24px) scale(0.97);
+      pointer-events: none;
+    }
+
+    /* The Main Precision Pill */
+    .neo-precision-pill {
+      background: #ffffff;
+      border: 2px solid #0a0a0a;
+      box-shadow: 4px 4px 0px #0a0a0a;
+      border-radius: 999px;
+      padding: 7px 10px 7px 14px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      width: max-content;
+      max-width: min(640px, 94vw);
+      transition: box-shadow 0.15s ease, transform 0.15s ease;
+    }
+
+    .neo-precision-pill:hover {
+      box-shadow: 5px 5px 0px #0a0a0a;
+      transform: translateY(-1px);
+    }
+
+    /* Duel Swords Icon Box (Monochrome Neo-Brutalist) */
+    .pill-icon-wrap {
+      width: 28px;
+      height: 28px;
+      background: #f1f5f9;
+      border: 1.5px solid #0a0a0a;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: #0a0a0a;
+    }
+
+    .pill-icon-svg {
+      width: 15px;
+      height: 15px;
+      display: block;
+    }
+
+    /* The Challenge Text */
+    .pill-text {
+      font-family: var(--font-grotesk);
+      font-size: 14.5px;
+      font-weight: 600;
+      color: #0a0a0a;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      line-height: 1.2;
+    }
+
+    .pill-host {
+      font-weight: 800;
+      color: #0a0a0a;
+    }
+
+    .pill-trio {
+      font-weight: 700;
+      color: #4b5563;
+      font-size: 13.5px;
+    }
+
+    .pill-qs {
+      font-weight: 800;
+      color: #0a0a0a;
+      font-family: var(--font-grotesk);
+    }
+
+    /* Actions */
+    .pill-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 6px;
+      flex-shrink: 0;
+    }
+
+    /* Primary Accept Button (Neo-Brutalist Mechanical) */
+    .btn-pill-accept {
+      background: #0a0a0a;
+      color: #ffffff;
+      border: 1.5px solid #0a0a0a;
+      box-shadow: 2px 2px 0px #0a0a0a;
+      font-family: var(--font-grotesk);
+      font-size: 12.5px;
+      font-weight: 800;
+      padding: 6.5px 16px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.1s ease;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      letter-spacing: 0.01em;
+    }
+
+    .btn-pill-accept:hover {
+      background: var(--electric-blue);
+      border-color: var(--electric-blue);
+      transform: translate(-1px, -1px);
+      box-shadow: 3px 3px 0px #0a0a0a;
+    }
+
+    .btn-pill-accept:active {
+      transform: translate(1.5px, 1.5px);
+      box-shadow: 0px 0px 0px #0a0a0a;
+    }
+
+    /* Decline Button */
+    .btn-pill-decline {
+      background: transparent;
+      color: #4b5563;
+      border: 1.5px solid transparent;
+      font-family: var(--font-grotesk);
+      font-size: 12.5px;
+      font-weight: 700;
+      padding: 6.5px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.1s ease;
+    }
+
+    .btn-pill-decline:hover {
+      background: #fee2e2;
+      color: #dc2626;
+      border-color: #fca5a5;
+    }
+
+    .btn-pill-decline:active {
+      transform: translateY(1px);
+    }
+
+    /* ── ACTION FEEDBACK TOAST ── */
+    #actionFeedback {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(50px);
+      background: #0a0a0a;
+      color: #fff;
+      padding: 12px 24px;
+      border: 2px solid #ffffff;
+      box-shadow: 4px 4px 0px #ffffff;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 800;
+      z-index: 999;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #actionFeedback.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Comparison Card at bottom of screen */
+    .comparison-drawer {
+      margin: 40px auto;
+      max-width: 900px;
+      width: calc(100% - 48px);
+      background: #f8fafc;
+      border: 2px solid #0a0a0a;
+      box-shadow: 4px 4px 0px #0a0a0a;
+      border-radius: 12px;
+      padding: 20px 24px;
+    }
+
+    .comp-title {
+      font-family: var(--font-grotesk);
+      font-size: 14px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #0f172a;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .comp-pill-preview {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: #ffffff;
+      border: 1px dashed #cbd5e1;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Prototype Control Bar -->
+  <header class="proto-header">
+    <div class="proto-brand">
+      <span class="brand-badge">NEO-BRUTALISM</span>
+      <span class="proto-title">Precision Pill Duel Invite</span>
+    </div>
+
+    <div class="proto-controls">
+      <!-- Scenario Toggle: 3-Way vs 1v1 -->
+      <div class="scenario-toggle" id="scenarioToggle">
+        <button class="scen-btn active" data-scenario="3way">3-WAY (with Zain)</button>
+        <button class="scen-btn" data-scenario="1v1">1-ON-1</button>
+      </div>
+
+      <!-- Trigger Button -->
+      <button class="neo-btn" id="btnTrigger">
+        <span>↵</span> RE-TRIGGER POPUP
+      </button>
+    </div>
+  </header>
+
+  <!-- View: In-Context Simulation over SAT Interface -->
+  <main class="viewport-container">
+    <div class="sat-header">
+      <div class="sat-header-section">
+        <span>Bluebook SAT Practice Test 1</span>
+        <span style="opacity: 0.3">|</span>
+        <span>Section 2: Reading & Writing</span>
+      </div>
+      <div class="sat-header-section">
+        <div class="sat-timer-pill">27:45 HIDE</div>
+        <button style="background:#27272a;border:1px solid #3f3f46;color:#fff;padding:4px 10px;font-family:var(--font-mono);font-size:11px;cursor:pointer">CALCULATOR</button>
+      </div>
+    </div>
+
+    <!-- Active Floating Challenge Notification -->
+    <div class="invite-anchor" id="liveInviteAnchor">
+      <div id="activeBannerMount"></div>
+    </div>
+
+    <!-- Mock SAT Split Question Area (Pixel-accurate to screenshot) -->
+    <div class="sat-body">
+      <!-- Left: Reading Passage -->
+      <div class="passage-col">
+        <h3>Hydrogen Sulfide (H₂S) in Seed Germination</h3>
+        <p>Hydrogen sulfide (H₂S) is typically toxic to mammals and plants at moderate concentrations. However, recent botanical studies conducted by researchers at Kyoto University investigated what effect minute, controlled exposures might have on early germination growth.</p>
+        <br>
+        <p>They treated bean, corn, wheat, and pea seeds with concentrations of H₂S ranging from 0.1 to 500 micromoles per liter. While toxic consequences were evident at high concentrations, low dosages demonstrated unexpected increases in enzymatic activity, stimulating α-amylase production essential for starch hydrolysis.</p>
+        <br>
+        <div style="background:#f8fafc;border:2px dashed #cbd5e1;padding:16px;font-family:var(--font-mono);font-size:12px;text-align:center;color:#64748b">
+          [ Figure 1: Germination Rate (%) vs Exposure Duration (hours) ]
+        </div>
+      </div>
+
+      <!-- Right: Question and Choices -->
+      <div class="question-col">
+        <div class="q-number-bar">
+          <span>Question 17 of 27</span>
+          <span style="color:#64748b;font-weight:600;font-size:13px">Mark for Review</span>
+        </div>
+
+        <p style="font-size:14.5px;line-height:1.6;font-weight:600;color:#0f172a">
+          Which choice best describes the data presented in the graph regarding pea seeds treated with 10 micromoles per liter of H₂S compared to untreated control seeds?
+        </p>
+
+        <div class="q-choices" style="display:flex;flex-direction:column;gap:10px">
+          <div class="q-choice">
+            <div class="q-letter">A</div>
+            <div>At 24 hours, less than 10% of treated seeds had germinated, whereas nearly 40% of control seeds had germinated.</div>
+          </div>
+          <div class="q-choice">
+            <div class="q-letter">B</div>
+            <div>At 48 hours, more than 70% of treated seeds had germinated, whereas untreated seeds remained below 35%.</div>
+          </div>
+          <div class="q-choice">
+            <div class="q-letter">C</div>
+            <div>Both treated and untreated seeds reached peak germination rates simultaneously at 72 hours.</div>
+          </div>
+          <div class="q-choice">
+            <div class="q-letter">D</div>
+            <div>Seed germination was completely inhibited across all durations by any concentration exceeding 5 micromoles.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Spec Card -->
+    <div class="comparison-drawer">
+      <div class="comp-title">
+        <span>✨</span> Precision Pill Specifications
+      </div>
+      <div class="comp-pill-preview" id="specMount"></div>
+      <div style="margin-top:14px;display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:#475569">
+        <div>✓ <strong>Single-line layout:</strong> zero line wrapping on any screen</div>
+        <div>✓ <strong>Exact format:</strong> <code>Yousef (+ Zain) challenged you to 10 Qs</code></div>
+        <div>✓ <strong>Tactile buttons:</strong> <code>Accept ↵</code> &amp; <code>Decline</code></div>
+        <div>✓ <strong>Minimalist Neo-Brutalism:</strong> 2px solid ink border + 4px hard block shadow</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Interactive Action Toast -->
+  <div id="actionFeedback">
+    <span id="fbIcon">⚔️</span>
+    <span id="fbText">ACTION TRIGGERED</span>
+  </div>
+
+  <script>
+    // State
+    let currentScenario = '3way'; // '3way' | '1v1'
+
+    // DOM Elements
+    const mount = document.getElementById('activeBannerMount');
+    const specMount = document.getElementById('specMount');
+    const anchor = document.getElementById('liveInviteAnchor');
+    const feedback = document.getElementById('actionFeedback');
+    const fbText = document.getElementById('fbText');
+    const fbIcon = document.getElementById('fbIcon');
+
+    // ── Template Generator ──
+    function buildPillHtml(scenario) {
+      const is3Way = scenario === '3way';
+      return `
+        <div class="neo-precision-pill">
+          <div class="pill-icon-wrap" aria-hidden="true">
+            <svg class="pill-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/>
+              <line x1="13" y1="19" x2="19" y2="13"/>
+              <line x1="16" y1="16" x2="20" y2="20"/>
+              <line x1="19" y1="21" x2="21" y2="19"/>
+              <polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/>
+              <line x1="5" y1="14" x2="9" y2="18"/>
+              <line x1="7" y1="17" x2="4" y2="20"/>
+              <line x1="3" y1="19" x2="5" y2="21"/>
+            </svg>
+          </div>
+          <div class="pill-text">
+            <span class="pill-host">Yousef</span>
+            ${is3Way ? '<span class="pill-trio">(+ Zain)</span>' : ''}
+            <span>challenged you to</span>
+            <span class="pill-qs">10 Qs</span>
+          </div>
+          <div class="pill-actions">
+            <button class="btn-pill-accept" onclick="handleAction('accept')">
+              <span>Accept</span>
+              <span style="font-size:11px">↵</span>
+            </button>
+            <button class="btn-pill-decline" onclick="handleAction('decline')">Decline</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function render() {
+      const html = buildPillHtml(currentScenario);
+      mount.innerHTML = html;
+      specMount.innerHTML = html;
+    }
+
+    function handleAction(type) {
+      if (type === 'accept') {
+        fbIcon.textContent = '⚡';
+        fbText.textContent = `[ACCEPTED] STARTING MATCH WITH YOUSEF${currentScenario === '3way' ? ' & ZAIN' : ''}...`;
+        feedback.style.borderColor = '#22c55e';
+      } else {
+        fbIcon.textContent = '✕';
+        fbText.textContent = `[DECLINED] CHALLENGE DISMISSED.`;
+        feedback.style.borderColor = '#ef4444';
+      }
+      feedback.classList.add('show');
+      anchor.classList.add('hidden');
+
+      setTimeout(() => {
+        feedback.classList.remove('show');
+      }, 2200);
+    }
+
+    function triggerPopup() {
+      anchor.classList.remove('hidden');
+      render();
+    }
+
+    // Scenario Switcher
+    document.getElementById('scenarioToggle').addEventListener('click', (e) => {
+      const btn = e.target.closest('.scen-btn');
+      if (!btn) return;
+      document.querySelectorAll('#scenarioToggle .scen-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentScenario = btn.dataset.scenario;
+      triggerPopup();
+    });
+
+    document.getElementById('btnTrigger').addEventListener('click', () => {
+      triggerPopup();
+    });
+
+    // Initial render
+    render();
+  </script>
+</body>
+</html>

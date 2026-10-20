@@ -1925,27 +1925,28 @@
       padding: 2px 8px;
     }
 
-    /* challenge invite (banner doubles as the duel status bar — see #banner.duel) */
+    /* ── Precision Pill Duel Invite (Neo-Brutalism) ── */
     #invitebanner {
       position: fixed;
       top: 64px;
       left: 50%;
-      transform: translate(-50%, -140%);
-      z-index: 350;
-      background: var(--panel, #fff);
-      color: var(--ink, #111);
-      border: 2px solid var(--accent);
-      border-radius: 16px;
-      padding: 14px 18px;
-      box-shadow: 0 12px 40px rgba(99, 102, 241, .35);
-      transition: transform .45s var(--ease-premium), opacity .3s, visibility .3s;
+      transform: translate(-50%, -150%);
+      z-index: 500;
+      background: #ffffff;
+      color: #0a0a0a;
+      border: 2px solid #0a0a0a;
+      box-shadow: 4px 4px 0px #0a0a0a;
+      border-radius: 999px;
+      padding: 7px 10px 7px 14px;
       display: flex;
-      gap: 12px;
       align-items: center;
-      max-width: min(480px, 92vw);
+      gap: 14px;
+      width: max-content;
+      max-width: min(640px, 94vw);
       opacity: 0;
       visibility: hidden;
       pointer-events: none;
+      transition: transform .25s cubic-bezier(0.16, 1, 0.3, 1), opacity .2s ease, visibility .2s, box-shadow .15s ease;
     }
 
     #invitebanner.show {
@@ -1953,19 +1954,174 @@
       opacity: 1;
       visibility: visible;
       pointer-events: auto;
-      animation: invite-pulse 1.6s infinite;
     }
 
-    @keyframes invite-pulse {
+    #invitebanner:hover {
+      box-shadow: 5px 5px 0px #0a0a0a;
+    }
 
-      0%,
-      100% {
-        box-shadow: 0 12px 40px rgba(99, 102, 241, .35);
-      }
+    #invitebanner .pill-icon-wrap {
+      width: 28px;
+      height: 28px;
+      background: #f1f5f9;
+      border: 1.5px solid #0a0a0a;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: #0a0a0a;
+    }
 
-      50% {
-        box-shadow: 0 12px 48px rgba(139, 92, 246, .6);
-      }
+    #invitebanner .pill-icon-svg {
+      width: 15px;
+      height: 15px;
+      display: block;
+    }
+
+    #invitebanner .pill-text {
+      font-family: 'Space Grotesk', var(--sans);
+      font-size: 14px;
+      font-weight: 600;
+      color: #0a0a0a;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      line-height: 1.2;
+    }
+
+    #invitebanner .pill-host {
+      font-weight: 800;
+      color: #0a0a0a;
+    }
+
+    #invitebanner .pill-trio {
+      font-weight: 700;
+      color: #4b5563;
+      font-size: 13.5px;
+    }
+
+    #invitebanner .pill-qs {
+      font-weight: 800;
+      color: #0a0a0a;
+    }
+
+    #invitebanner .pill-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 6px;
+      flex-shrink: 0;
+    }
+
+    #invitebanner .btn-pill-accept {
+      background: #0a0a0a;
+      color: #ffffff;
+      border: 1.5px solid #0a0a0a;
+      box-shadow: 2px 2px 0px #0a0a0a;
+      font-family: 'Space Grotesk', var(--sans);
+      font-size: 12.5px;
+      font-weight: 800;
+      padding: 6.5px 16px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.1s ease;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      letter-spacing: 0.01em;
+      outline: none;
+    }
+
+    #invitebanner .btn-pill-accept:hover {
+      background: #2563eb;
+      border-color: #2563eb;
+      transform: translate(-1px, -1px);
+      box-shadow: 3px 3px 0px #0a0a0a;
+    }
+
+    #invitebanner .btn-pill-accept:active {
+      transform: translate(1.5px, 1.5px);
+      box-shadow: 0px 0px 0px #0a0a0a;
+    }
+
+    #invitebanner .btn-pill-decline {
+      background: transparent;
+      color: #4b5563;
+      border: 1.5px solid transparent;
+      font-family: 'Space Grotesk', var(--sans);
+      font-size: 12.5px;
+      font-weight: 700;
+      padding: 6.5px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.1s ease;
+      outline: none;
+    }
+
+    #invitebanner .btn-pill-decline:hover {
+      background: #fee2e2;
+      color: #dc2626;
+      border-color: #fca5a5;
+    }
+
+    #invitebanner .btn-pill-decline:active {
+      transform: translateY(1px);
+    }
+
+    /* Dark Mode Support for Invite Banner */
+    html[data-theme="dark"] #invitebanner {
+      background: #18181b;
+      color: #f8fafc;
+      border-color: #ffffff;
+      box-shadow: 4px 4px 0px #ffffff;
+    }
+
+    html[data-theme="dark"] #invitebanner:hover {
+      box-shadow: 5px 5px 0px #ffffff;
+    }
+
+    html[data-theme="dark"] #invitebanner .pill-icon-wrap {
+      background: #27272a;
+      border-color: #ffffff;
+      color: #ffffff;
+    }
+
+    html[data-theme="dark"] #invitebanner .pill-text {
+      color: #ffffff;
+    }
+
+    html[data-theme="dark"] #invitebanner .pill-host,
+    html[data-theme="dark"] #invitebanner .pill-qs {
+      color: #ffffff;
+    }
+
+    html[data-theme="dark"] #invitebanner .pill-trio {
+      color: #94a3b8;
+    }
+
+    html[data-theme="dark"] #invitebanner .btn-pill-accept {
+      background: #ffffff;
+      color: #0a0a0a;
+      border-color: #ffffff;
+      box-shadow: 2px 2px 0px #ffffff;
+    }
+
+    html[data-theme="dark"] #invitebanner .btn-pill-accept:hover {
+      background: #38bdf8;
+      border-color: #38bdf8;
+      color: #0a0a0a;
+    }
+
+    html[data-theme="dark"] #invitebanner .btn-pill-decline {
+      color: #94a3b8;
+    }
+
+    html[data-theme="dark"] #invitebanner .btn-pill-decline:hover {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+      border-color: rgba(239, 68, 68, 0.4);
     }
 
     #countdown {
@@ -2510,13 +2666,6 @@
     }
 
     /* ── Premium polish pass: challenge, history, toasts ── */
-    #invitebanner {
-      border-radius: 20px;
-      border: 2px solid transparent;
-      background: linear-gradient(#ffffff, #ffffff) padding-box,
-        linear-gradient(135deg, var(--accent), var(--accent2)) border-box;
-      box-shadow: 0 20px 60px rgba(99, 102, 241, .4);
-    }
 
     #countnum {
       background: linear-gradient(180deg, #ffffff, #c7d2fe);
@@ -3229,12 +3378,31 @@
     </div>
   </div>
 
-  <div id="invitebanner"><span style="font-size:24px">⚔️</span>
-    <div><b id="invite-from">Friend</b> challenged you to <b id="invite-n">10</b> questions!
-      <div style="font-size:12px;color:var(--muted)">Same questions, live.</div>
+  <div id="invitebanner">
+    <div class="pill-icon-wrap" aria-hidden="true">
+      <svg class="pill-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/>
+        <line x1="13" y1="19" x2="19" y2="13"/>
+        <line x1="16" y1="16" x2="20" y2="20"/>
+        <line x1="19" y1="21" x2="21" y2="19"/>
+        <polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/>
+        <line x1="5" y1="14" x2="9" y2="18"/>
+        <line x1="7" y1="17" x2="4" y2="20"/>
+        <line x1="3" y1="19" x2="5" y2="21"/>
+      </svg>
     </div>
-    <div style="margin-left:auto;display:flex;gap:8px"><button class="btn-blue" id="invite-accept">Accept</button>
-      <button class="btn-ghost" id="invite-decline">Decline</button>
+    <div class="pill-text">
+      <span class="pill-host" id="invite-from">Friend</span>
+      <span class="pill-trio" id="invite-others" style="display:none"></span>
+      <span>challenged you to</span>
+      <span class="pill-qs"><span id="invite-n">10</span> Qs</span>
+    </div>
+    <div class="pill-actions">
+      <button class="btn-pill-accept" id="invite-accept">
+        <span>Accept</span>
+        <span style="font-size:11px">↵</span>
+      </button>
+      <button class="btn-pill-decline" id="invite-decline">Decline</button>
     </div>
   </div>
   <div id="countdown">
