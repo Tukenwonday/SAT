@@ -906,8 +906,15 @@ app.patch("/api/sessions/:id", async (req, res) => {
     } else if (action === "advance") {
       const activeRemaining = s.players.filter(p => !(s.forfeitedPlayers || []).includes(p));
       const effectiveHost = activeRemaining.includes(s.host) ? s.host : activeRemaining[0];
-      if ((c.name !== effectiveHost && !isHost) || s.status !== "active") return res.status(409).json({ ok: false, error: "bad-state" });
+      const isParticipantActive = activeRemaining.includes(c.name);
+      if (!isParticipantActive || s.status !== "active") return res.status(409).json({ ok: false, error: "bad-state" });
       const ni = Math.max(0, +req.body.currentIndex || 0);
+      if (ni <= (s.currentIndex || 0)) {
+        return res.json({ ok: true, session: s });
+      }
+      const allActiveAnswered = activeRemaining.length > 0 && activeRemaining.every(p => s.currentAnswers && s.currentAnswers[p]);
+      const canAdvance = isHost || c.name === effectiveHost || allActiveAnswered;
+      if (!canAdvance) return res.status(409).json({ ok: false, error: "bad-state" });
       const r = await pool.query(
         "UPDATE sessions SET current_index=$2, current_answers='{}' WHERE id=$1 RETURNING *", [id, ni]);
       s = sessionOut(r.rows[0]);

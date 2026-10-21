@@ -1678,6 +1678,7 @@ function startCountdown(s) {
   Net.playerScores = {};
   Net.playerTimes = {};
   Net._announcedForfeits = new Set();
+  Net._scoredQuestions = new Set();
   (s.players || [s.host, s.guest]).forEach(p => {
     Net.playerScores[p] = 0;
     Net.playerTimes[p] = [];
@@ -1712,6 +1713,7 @@ function enterBattle(s) {
   Net.qStartMs = Date.now();
   Net.revealed = false;
   Net._myPick = null; Net._reveals = {};
+  Net._scoredQuestions = new Set();
   Net._bIdx = s.currentIndex || 0;
   try { // rejoining mid-duel (or late join): land on the live question, not Q1
     const want = idxs[Net._bIdx];
@@ -1949,16 +1951,21 @@ async function revealDuel(s, ca) {
   Net.playerScores = Net.playerScores || {};
   Net.playerTimes = Net.playerTimes || {};
 
-  players.forEach(p => {
-    const doc = ca[p];
-    if (doc) {
-      if (doc.is_correct) {
-        Net.playerScores[p] = (Net.playerScores[p] || 0) + 1;
+  Net._scoredQuestions = Net._scoredQuestions || new Set();
+  const alreadyScored = Net._scoredQuestions.has(i);
+  if (!alreadyScored) {
+    Net._scoredQuestions.add(i);
+    players.forEach(p => {
+      const doc = ca[p];
+      if (doc) {
+        if (doc.is_correct) {
+          Net.playerScores[p] = (Net.playerScores[p] || 0) + 1;
+        }
+        Net.playerTimes[p] = Net.playerTimes[p] || [];
+        Net.playerTimes[p].push(doc.timeMs || 0);
       }
-      Net.playerTimes[p] = Net.playerTimes[p] || [];
-      Net.playerTimes[p].push(doc.timeMs || 0);
-    }
-  });
+    });
+  }
   Net.myScore = Net.playerScores[Net.name] || 0;
   Net.myTimes = Net.playerTimes[Net.name] || [];
   const firstFoe = activePlayers.find(p => p !== Net.name) || players.find(p => p !== Net.name) || players[0];
@@ -1977,30 +1984,44 @@ async function revealDuel(s, ca) {
   paintBattle({ ...s, currentIndex: i });
 
   const isMeCorrect = !!mDoc.is_correct;
-  if (activePlayers.length <= 2) {
-    toast(isMeCorrect ? `Correct! ${Net.myScore}–${Net.frScore} 🎉` :
-      `It was ${correctOf(qid)} — ${Net.myScore}–${Net.frScore}`);
-  } else {
-    toast(isMeCorrect ? `Correct! Score: ${$("scorepill")?.textContent || ""} 🎉` :
-      `It was ${correctOf(qid)} · ${$("scorepill")?.textContent || ""}`);
+  if (!alreadyScored) {
+    if (activePlayers.length <= 2) {
+      toast(isMeCorrect ? `Correct! ${Net.myScore}–${Net.frScore} 🎉` :
+        `It was ${correctOf(qid)} — ${Net.myScore}–${Net.frScore}`);
+    } else {
+      toast(isMeCorrect ? `Correct! Score: ${$("scorepill")?.textContent || ""} 🎉` :
+        `It was ${correctOf(qid)} · ${$("scorepill")?.textContent || ""}`);
+    }
   }
 
   setTimeout(async () => {
-    if (!Net.session || Net.session.id !== s.id) return;
-    if ((s.currentIndex || 0) !== i) return;
-    if (i + 1 >= n) { await closeSession(s); return; }
-    const effectiveHost = activePlayers.includes(s.host) ? s.host : activePlayers[0];
+    const curS = Net.session;
+    if (!curS || curS.id !== s.id || curS.status !== "active") return;
+    if ((curS.currentIndex || 0) !== i) return;
+    if (i + 1 >= n) { await closeSession(curS); return; }
+
+    const curPlayers = curS.players || [curS.host, curS.guest];
+    const curForfeited = curS.forfeitedPlayers || [];
+    const curActive = curPlayers.filter(p => !curForfeited.includes(p));
+    const effectiveHost = curActive.includes(curS.host) ? curS.host : curActive[0];
+
     if (Net.name === effectiveHost) {
-      const ar = await api("/api/sessions/" + encodeURIComponent(s.id),
+      const ar = await api("/api/sessions/" + encodeURIComponent(curS.id),
         { method: "PATCH", body: { actor: Net.name, pin: getPin(Net.name), action: "advance", currentIndex: i + 1 } });
-      if (!ar || !ar.ok) refreshSession(s.id);
+      if (!ar || !ar.ok) refreshSession(curS.id);
     } else {
-      setTimeout(() => {
-        if (Net.session && Net.session.currentIndex === i) syncBattle({ ...Net.session });
-      }, 2500);
+      setTimeout(async () => {
+        const live = Net.session;
+        if (!live || live.id !== s.id || (live.currentIndex || 0) !== i || live.status !== "active") return;
+        const liveActive = (live.players || [live.host, live.guest]).filter(p => !(live.forfeitedPlayers || []).includes(p));
+        const allAns = liveActive.length > 0 && liveActive.every(p => live.currentAnswers && live.currentAnswers[p]);
+        if (allAns && liveActive.includes(Net.name)) {
+          const ar = await api("/api/sessions/" + encodeURIComponent(live.id),
+            { method: "PATCH", body: { actor: Net.name, pin: getPin(Net.name), action: "advance", currentIndex: i + 1 } });
+          if (!ar || !ar.ok) refreshSession(live.id);
+        }
+      }, 1200);
     }
-    Net.qStartMs = Date.now();
-    Net.revealed = false;
   }, 2600);
 }
 
@@ -2193,6 +2214,7 @@ function clearChallengeState() {
   stopSessPoll();
   exitBattleView();
   Net.revealed = false;
+  Net._scoredQuestions = new Set();
 }
 function showForfeitEnd(s, foe) {
   exitBattleView();
