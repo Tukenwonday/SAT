@@ -320,8 +320,8 @@ async function identify(name, pin, quiet) {
   if (App() && App().S) App().S.name = name;
   try {
     const c = loadAnswerCache(name);
-    if (c && c.a && Object.keys(c.a).length && App() && App().S) {
-      App().S.answers = { ...c.a };
+    if (App() && App().S) {
+      App().S.answers = (c && c.a && typeof c.a === "object") ? { ...c.a } : {};
       if (App().refresh) App().refresh();
     }
   } catch (e) {}
@@ -700,9 +700,7 @@ async function restoreProgress() {
   const solved = r.answers || {};
   const S = (App() && App().S) ? App().S : null;
   if (S) {
-    const next = { ...solved };
-    Object.keys(S.answers || {}).forEach(q => { if (!(q in solved)) next[q] = S.answers[q]; });
-    S.answers = next;
+    S.answers = { ...solved };
     if (App().refresh) App().refresh();
   }
   Net._solvedCache[Net.name] = { set: new Set(Object.keys((S && S.answers) || solved)), ms: Date.now() };

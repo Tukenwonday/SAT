@@ -4034,6 +4034,9 @@
     function commitName() {
       const v = ($('nameinput').value || '').trim().slice(0, 20);
       if (!v) { $('nameinput').focus(); return; }
+      if (S.name && S.name !== v) {
+        S.answers = {};
+      }
       S.name = v; save(); syncName();
       const btn = $('namesave');
       btn.classList.remove('pop'); void btn.offsetWidth; btn.classList.add('pop');
