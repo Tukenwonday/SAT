@@ -272,6 +272,10 @@
       margin: 0 auto;
     }
 
+    #passage.notes-mode {
+      white-space: pre-line;
+    }
+
     #passage img.figimg {
       display: block;
       max-width: 100%;
@@ -3549,6 +3553,13 @@
 
     /* ── Passage / stem split: task sentence goes right, rest goes left ── */
     function splitQA(text) {
+      const studentIdx = text.indexOf('The student wants');
+      if (studentIdx !== -1 && text.includes('taken the following notes')) {
+        return {
+          passage: text.slice(0, studentIdx).trim(),
+          stem: text.slice(studentIdx).trim()
+        };
+      }
       const parts = text.split(/(?<=[.!?])\s+(?=[A-Z0-9"“])/);
       const TASK = /^(Which|What|How|Why|Based on|According to|The student|The author)\b/;
       if (parts.length > 1) {
@@ -3647,6 +3658,7 @@
       const all = S.hl[e.id] || [];
       const plist = all.filter(h => h.w === 'p').sort((a, b) => a.s - b.s);
       const slist = all.filter(h => h.w === 's').sort((a, b) => a.s - b.s);
+      $('passage').classList.toggle('notes-mode', parts.passage.includes('•'));
       $('passage').innerHTML = hlHTML(parts.passage, plist, hlPopNew, pUR) +
         (e.fig ? `<img class="figimg" src="${e.fig}" alt="Figure">` : '');
       $('stem').innerHTML = hlHTML(parts.stem, slist, hlPopNew, sUR);

@@ -25,6 +25,10 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 QPDF = BASE / "questions.pdf"
 APDF = BASE / "answers.pdf"
+if not APDF.exists():
+    for f in BASE.glob("questionbank-export*.pdf"):
+        APDF = f
+        break
 OUT = BASE / "sat_db.json"
 
 ID_RE = re.compile(r"Question ID:\s*([0-9a-fA-F]+)")
@@ -383,20 +387,79 @@ def parse_entry(full):
     }
 
 
+def enrich_notes_bullets(db, adoc):
+    id_to_page = {}
+    for i, page in enumerate(adoc):
+        txt = page.get_text()
+        m = ID_RE.search(txt)
+        if m:
+            id_to_page[m.group(1).lower()] = i
+    updated = 0
+    for q in db:
+        if "taken the following notes" not in q.get("question", ""):
+            continue
+        qid = q["id"]
+        page_idx = id_to_page.get(qid)
+        if page_idx is None:
+            continue
+        page = adoc[page_idx]
+        bullets = sorted([d["rect"] for d in page.get_drawings() if 35 < d["rect"].x0 < 40 and d["rect"].y0 > 140], key=lambda r: r.y0)
+        if not bullets:
+            continue
+        blocks = page.get_text("dict")["blocks"]
+        lines = [l for b in blocks if "lines" in b for l in b["lines"] if l["bbox"][1] > 140]
+        task_lines = [l for l in lines if l["bbox"][0] < 30 and l["bbox"][1] > bullets[-1].y0]
+        task_y = task_lines[0]["bbox"][1] if task_lines else 9999
+        header_lines = [l for l in lines if l["bbox"][1] < bullets[0].y0 and "taken the following notes" in "".join(s["text"] for s in l["spans"])]
+        header = clean(" ".join("".join(s["text"] for s in l["spans"]).strip() for l in header_lines)) or "While researching a topic, a student has taken the following notes:"
+        notes_list = []
+        for idx, b in enumerate(bullets):
+            y_min = b.y0 - 5
+            y_max = bullets[idx+1].y0 - 5 if idx + 1 < len(bullets) else task_y - 2
+            note_lines = [l for l in lines if y_min <= l["bbox"][1] < y_max and l["bbox"][0] > 40]
+            raw = " ".join("".join(s["text"] for s in l["spans"]).strip() for l in note_lines)
+            c = clean(raw)
+            if c:
+                notes_list.append(c)
+        task_lines_all = [l for l in lines if l["bbox"][1] >= task_y - 2]
+        task_text_lines = []
+        for l in task_lines_all:
+            ltxt = "".join(s["text"] for s in l["spans"]).strip()
+            if ltxt == "Answer":
+                break
+            task_text_lines.append(ltxt)
+        task_text = clean(" ".join(task_text_lines))
+        if "The student wants" not in task_text:
+            s_idx = q["question"].find("The student wants")
+            if s_idx != -1:
+                task_text = q["question"][s_idx:]
+        if len(notes_list) >= 2 and "The student wants" in task_text:
+            q["question"] = header + "\n\n" + "\n\n".join("• " + n for n in notes_list) + "\n" + task_text
+            updated += 1
+    if updated:
+        print(f"formatted {updated} notes questions with bullet points")
+
+
 def main():
-    if not QPDF.exists():
-        sys.exit(f"missing {QPDF}")
+    global APDF
     if not APDF.exists():
-        sys.exit(f"missing {APDF}")
+        for f in BASE.glob("questionbank-export*.pdf"):
+            APDF = f
+            break
+    if not APDF.exists():
+        sys.exit(f"missing answers.pdf or questionbank-export*.pdf")
 
-    print(f"opening {QPDF.name} + {APDF.name} ...")
-    qdoc = fitz.open(QPDF)
     adoc = fitz.open(APDF)
-    print(f"pages: questions={len(qdoc)} answers={len(adoc)}")
-
-    q_entries = group_entries(qdoc)
     a_entries = group_entries(adoc)
-    print(f"grouped: q_entries={len(q_entries)} a_entries={len(a_entries)}")
+    print(f"opening {APDF.name} ... pages={len(adoc)} grouped={len(a_entries)}")
+
+    if QPDF.exists():
+        qdoc = fitz.open(QPDF)
+        q_entries = group_entries(qdoc)
+        print(f"opening {QPDF.name} ... pages={len(qdoc)} grouped={len(q_entries)}")
+    else:
+        print(f"questions.pdf not found; parsing full dataset directly from {APDF.name} ...")
+        q_entries = a_entries
 
     q_parsed, a_parsed = [], []
     for e in q_entries:
@@ -476,6 +539,8 @@ def main():
               [d["id"] for d in db
                if set(k for k, v in d["choices"].items() if v) !=
                {"A", "B", "C", "D"} or not d["correct"]][:10])
+
+    enrich_notes_bullets(db, adoc)
 
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(db, f, ensure_ascii=False, indent=1)

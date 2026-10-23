@@ -30,7 +30,11 @@ WIDTH = 100
 
 def wrap(s):
     s = re.sub(r"</?u>", "", s or "")
-    return textwrap.fill(s, width=WIDTH) if s else "(missing)"
+    if not s:
+        return "(missing)"
+    if "\n" in s:
+        return "\n".join(textwrap.fill(line, width=WIDTH) if line.strip() else "" for line in s.splitlines())
+    return textwrap.fill(s, width=WIDTH)
 
 
 def load_db():
