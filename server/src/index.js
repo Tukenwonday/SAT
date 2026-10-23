@@ -973,13 +973,13 @@ app.patch("/api/sessions/:id", async (req, res) => {
 
       const r = await pool.query(
         `UPDATE sessions SET
-          finished_players = array_append(ARRAY(SELECT unnest(finished_players) WHERE unnest <> $2), $2),
+          finished_players = $2::text[],
           rush_answers = rush_answers || $3::jsonb,
           player_times = player_times || $4::jsonb,
           status = CASE WHEN $5 = true THEN 'finished' ELSE status END,
           finished_at = CASE WHEN $5 = true THEN now() ELSE finished_at END
          WHERE id=$1 RETURNING *`,
-        [id, c.name, JSON.stringify(pAnswersEntry), JSON.stringify(pTimeEntry), allActiveDone]
+        [id, willBeFinished, JSON.stringify(pAnswersEntry), JSON.stringify(pTimeEntry), allActiveDone]
       );
       s = sessionOut(r.rows[0]);
 
@@ -1191,13 +1191,13 @@ io.on("connection", (socket) => {
 
       const r = await pool.query(
         `UPDATE sessions SET
-          finished_players = array_append(ARRAY(SELECT unnest(finished_players) WHERE unnest <> $2), $2),
+          finished_players = $2::text[],
           rush_answers = rush_answers || $3::jsonb,
           player_times = player_times || $4::jsonb,
           status = CASE WHEN $5 = true THEN 'finished' ELSE status END,
           finished_at = CASE WHEN $5 = true THEN now() ELSE finished_at END
          WHERE id=$1 RETURNING *`,
-        [s.id, c.name, JSON.stringify(pAnswersEntry), JSON.stringify(pTimeEntry), allActiveDone]
+        [s.id, willBeFinished, JSON.stringify(pAnswersEntry), JSON.stringify(pTimeEntry), allActiveDone]
       );
       s = sessionOut(r.rows[0]);
 

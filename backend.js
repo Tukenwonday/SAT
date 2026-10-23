@@ -1772,11 +1772,12 @@ function syncBattle(s) {
       if (rw) {
         rw.classList.add("open");
         const waitingFor = (s.players || []).filter(p => !(s.finishedPlayers || []).includes(p) && !(s.forfeitedPlayers || []).includes(p));
+        const others = waitingFor.filter(p => p !== Net.name);
         const st = $("rush-wait-status");
         if (st) {
-          st.textContent = waitingFor.length
-            ? `Waiting for ${waitingFor.join(", ")} to finish…`
-            : "Calculating final scores…";
+          st.textContent = others.length
+            ? `Waiting for ${others.join(", ")} to finish…`
+            : (waitingFor.length ? "Waiting for other players to finish…" : "Calculating final scores…");
         }
       }
     }
@@ -2077,7 +2078,10 @@ Net.submitRushTest = async function () {
         Net.socket.emit("duel:rush_submit", payload, (a) => { if (!settled) { settled = true; res(a); } });
         setTimeout(() => { if (!settled) { settled = true; res(null); } }, 6000);
       });
-      if (ack && ack.ok) done = true;
+      if (ack && ack.ok) {
+        done = true;
+        if (ack.session) onSession(ack.session);
+      }
     } catch (e) {}
   }
   if (!done) {
@@ -2085,16 +2089,20 @@ Net.submitRushTest = async function () {
       method: "PATCH",
       body: { ...payload, action: "rush_submit" },
     });
-    if (r && r.ok) done = true;
+    if (r && r.ok) {
+      done = true;
+      if (r.session) onSession(r.session);
+    }
   }
   if (done) {
     toast("Test submitted! 🏁 Waiting for opponents…");
   } else {
     toast("Failed to submit test (offline?) — retrying…");
-    await api("/api/sessions/" + encodeURIComponent(s.id), {
+    const r2 = await api("/api/sessions/" + encodeURIComponent(s.id), {
       method: "PATCH",
       body: { ...payload, action: "rush_submit" },
     }).catch(() => {});
+    if (r2 && r2.ok && r2.session) onSession(r2.session);
   }
 };
 
