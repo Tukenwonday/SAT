@@ -31,6 +31,10 @@ async function initDb() {
       ALTER TABLE sessions ADD COLUMN IF NOT EXISTS players TEXT[];
       ALTER TABLE sessions ADD COLUMN IF NOT EXISTS accepted_by TEXT[];
       ALTER TABLE sessions ADD COLUMN IF NOT EXISTS forfeited_players TEXT[];
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'wait';
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS rush_answers JSONB NOT NULL DEFAULT '{}';
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS finished_players TEXT[] NOT NULL DEFAULT '{}';
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS player_times JSONB NOT NULL DEFAULT '{}';
       UPDATE sessions SET players = ARRAY[host, guest] WHERE players IS NULL AND guest IS NOT NULL;
       UPDATE sessions SET accepted_by = ARRAY[host, guest] WHERE accepted_by IS NULL AND guest IS NOT NULL;
     `);
@@ -136,6 +140,10 @@ function sessionOut(r) {
     totalQuestions: r.total_questions, status: r.status,
     currentIndex: r.current_index, questionIds: r.question_ids || [],
     currentAnswers: r.current_answers || {},
+    mode: r.mode || 'wait',
+    rushAnswers: r.rush_answers || {},
+    finishedPlayers: r.finished_players || [],
+    playerTimes: r.player_times || {},
     createdAt: +r.created_at,
     startedAt: r.started_at ? new Date(r.started_at).getTime() : null,
     finishedAt: r.finished_at ? new Date(r.finished_at).getTime() : null,
@@ -538,7 +546,7 @@ app.get("/api/users/:name/profile", async (req, res) => {
 
     // 2. Finished sessions involving this user
     const sessRes = await pool.query(
-      `SELECT id, host, guest, players, started_at, finished_at, total_questions, created_at
+      `SELECT id, host, guest, players, started_at, finished_at, total_questions, created_at, player_times, mode
        FROM sessions
        WHERE status = 'finished'
          AND ($1 = ANY(COALESCE(players, ARRAY[host, guest])) OR host = $1 OR guest = $1)
@@ -593,8 +601,37 @@ app.get("/api/users/:name/profile", async (req, res) => {
         currentStreak++;
         if (currentStreak > bestStreak) bestStreak = currentStreak;
       } else if (myScore === maxOtherScore) {
-        ties++;
-        currentStreak = 0;
+        // Tie-breaker: faster total time wins
+        const pTimes = s.player_times || {};
+        const getPTime = p => {
+          const val = pTimes[p];
+          if (!val) return 0;
+          if (typeof val === "object" && val !== null) return +val.totalTimeMs || 0;
+          return +val || 0;
+        };
+        const myTime = getPTime(name);
+        let bestOtherTime = Infinity;
+        for (const p of plist) {
+          if (p === name) continue;
+          const oppScore = (scores[p] && scores[p].ok) || 0;
+          if (oppScore === myScore) {
+            const oppTime = getPTime(p) || Infinity;
+            if (oppTime < bestOtherTime) bestOtherTime = oppTime;
+          }
+        }
+        if (myTime > 0 && bestOtherTime > 0 && bestOtherTime !== Infinity && myTime !== bestOtherTime) {
+          if (myTime < bestOtherTime) {
+            wins++;
+            currentStreak++;
+            if (currentStreak > bestStreak) bestStreak = currentStreak;
+          } else {
+            losses++;
+            currentStreak = 0;
+          }
+        } else {
+          ties++;
+          currentStreak = 0;
+        }
       } else {
         losses++;
         currentStreak = 0;
@@ -671,6 +708,7 @@ app.post("/api/sessions", async (req, res) => {
     guests = [...new Set(guests)].filter(g => g && g !== c.name);
     const qids = Array.isArray(req.body.questionIds) ? req.body.questionIds.map(String) : [];
     const n = +req.body.totalQuestions || qids.length;
+    const mode = req.body.mode === "rush" ? "rush" : "wait";
     if (!guests.length) return res.status(400).json({ ok: false, error: "bad-guest" });
     if (guests.length > 2) return res.status(400).json({ ok: false, error: "too-many-guests" });
     for (const g of guests) {
@@ -711,9 +749,9 @@ app.post("/api/sessions", async (req, res) => {
                RETURNING id, host, guest, players`, [c.name]);
             expired = exp.rows;
             const r = await client.query(
-              `INSERT INTO sessions(host, guest, players, accepted_by, forfeited_players, total_questions, status, current_index, question_ids, current_answers, created_at)
-               VALUES($1,$2,$3,$4,'{}',$5,'pending',0,$6,'{}',$7) RETURNING *`,
-              [c.name, guest, allPlayers, [c.name], n, qids.slice(0, n), Date.now()]);
+              `INSERT INTO sessions(host, guest, players, accepted_by, forfeited_players, total_questions, status, current_index, question_ids, current_answers, created_at, mode)
+               VALUES($1,$2,$3,$4,'{}',$5,'pending',0,$6,'{}',$7,$8) RETURNING *`,
+              [c.name, guest, allPlayers, [c.name], n, qids.slice(0, n), Date.now(), mode]);
             s = sessionOut(r.rows[0]);
           }
         }
@@ -724,9 +762,9 @@ app.post("/api/sessions", async (req, res) => {
            RETURNING id, host, guest, players`, [c.name]);
         expired = exp.rows;
         const r = await client.query(
-          `INSERT INTO sessions(host, guest, players, accepted_by, forfeited_players, total_questions, status, current_index, question_ids, current_answers, created_at)
-           VALUES($1,$2,$3,$4,'{}',$5,'pending',0,$6,'{}',$7) RETURNING *`,
-          [c.name, guests[0], allPlayers, [c.name], n, qids.slice(0, n), Date.now()]);
+          `INSERT INTO sessions(host, guest, players, accepted_by, forfeited_players, total_questions, status, current_index, question_ids, current_answers, created_at, mode)
+           VALUES($1,$2,$3,$4,'{}',$5,'pending',0,$6,'{}',$7,$8) RETURNING *`,
+          [c.name, guests[0], allPlayers, [c.name], n, qids.slice(0, n), Date.now(), mode]);
         s = sessionOut(r.rows[0]);
       }
       await client.query("COMMIT");
@@ -918,16 +956,69 @@ app.patch("/api/sessions/:id", async (req, res) => {
       const r = await pool.query(
         "UPDATE sessions SET current_index=$2, current_answers='{}' WHERE id=$1 RETURNING *", [id, ni]);
       s = sessionOut(r.rows[0]);
+    } else if (action === "rush_submit") {
+      const activeRemaining = s.players.filter(p => !(s.forfeitedPlayers || []).includes(p));
+      if (!activeRemaining.includes(c.name) || s.status !== "active") return res.status(409).json({ ok: false, error: "bad-state" });
+      const curFinished = s.finishedPlayers || [];
+      const answers = req.body.answers || {};
+      const totalTimeMs = +req.body.totalTimeMs || 0;
+      const qTimes = req.body.qTimes || {};
+      const correctMap = req.body.correctMap || {};
+
+      const pTimeEntry = { [c.name]: { totalTimeMs, qTimes } };
+      const pAnswersEntry = { [c.name]: answers };
+
+      const willBeFinished = curFinished.includes(c.name) ? curFinished : [...curFinished, c.name];
+      const allActiveDone = activeRemaining.length > 0 && activeRemaining.every(p => willBeFinished.includes(p));
+
+      const r = await pool.query(
+        `UPDATE sessions SET
+          finished_players = array_append(ARRAY(SELECT unnest(finished_players) WHERE unnest <> $2), $2),
+          rush_answers = rush_answers || $3::jsonb,
+          player_times = player_times || $4::jsonb,
+          status = CASE WHEN $5 = true THEN 'finished' ELSE status END,
+          finished_at = CASE WHEN $5 = true THEN now() ELSE finished_at END
+         WHERE id=$1 RETURNING *`,
+        [id, c.name, JSON.stringify(pAnswersEntry), JSON.stringify(pTimeEntry), allActiveDone]
+      );
+      s = sessionOut(r.rows[0]);
+
+      // Bulk insert attempts into ledger for this player
+      const now = Date.now(), today = dayKeyOf(now);
+      const qids = s.questionIds || [];
+      let insertCount = 0;
+      for (const qid of qids) {
+        if (answers[qid]) {
+          const sel = String(answers[qid]);
+          const isCorr = !!correctMap[qid];
+          await pool.query(
+            "INSERT INTO attempts(user_name, question_id, selected, is_correct, session_id) VALUES($1,$2,$3,$4,$5)",
+            [c.name, qid, sel, isCorr, id]
+          );
+          insertCount++;
+        }
+      }
+      if (insertCount > 0) {
+        await pool.query(
+          `UPDATE status SET today_count = CASE WHEN day_key=$2 THEN today_count+$4 ELSE $4 END,
+           day_key=$2, last_seen=$3 WHERE name=$1`, [c.name, today, now, insertCount]);
+      }
+      const tc = (await pool.query("SELECT today_count FROM status WHERE name=$1", [c.name])).rows[0];
+      todayCount = tc ? tc.today_count : 0;
+      emitPresenceCircle(c.name);
     } else if (action === "finish") {
       if (s.status !== "active") return res.status(409).json({ ok: false, error: "bad-state" });
-      const r = await pool.query(
+      const pTimes = req.body.playerTimes ? JSON.stringify(req.body.playerTimes) : null;
+      const r = pTimes ? await pool.query(
+        "UPDATE sessions SET status='finished', finished_at=now(), player_times=player_times || $2::jsonb WHERE id=$1 RETURNING *", [id, pTimes])
+        : await pool.query(
         "UPDATE sessions SET status='finished', finished_at=now() WHERE id=$1 RETURNING *", [id]);
       s = sessionOut(r.rows[0]);
     } else {
       return res.status(400).json({ ok: false, error: "bad-action" });
     }
     io.to("session:" + s.id).emit("session:update", s);
-    if (action === "accept" || action === "finish" || action === "forfeit") {
+    if (action === "accept" || action === "finish" || action === "forfeit" || (action === "rush_submit" && s.status === "finished")) {
       for (const p of s.players) emitPresenceCircle(p);
     }
     res.json({ ok: true, session: s, ...(typeof todayCount === "number" ? { todayCount } : {}) });
@@ -1071,6 +1162,75 @@ io.on("connection", (socket) => {
       emitPresenceCircle(c.name);
       ack && ack({ ok: true, session: s, todayCount: tc ? tc.today_count : 0 });
     } catch (e) { ack && ack({ ok: false, error: "server" }); }
+  });
+
+  // Duel rush submit over socket
+  socket.on("duel:rush_submit", async (msg = {}, ack) => {
+    try {
+      const c = await checkPin(msg.actor, msg.pin);
+      if (!c.ok || c.name !== who) return ack && ack({ ok: false, error: c.error });
+      const cur = (await pool.query("SELECT * FROM sessions WHERE id=$1", [msg.sessionId])).rows[0];
+      if (!cur) return ack && ack({ ok: false, error: "unknown-session" });
+      let s = sessionOut(cur);
+      if (s.status !== "active") return ack && ack({ ok: false, error: "bad-state" });
+      if (!s.players.includes(c.name)) return ack && ack({ ok: false, error: "forbidden" });
+      if ((s.forfeitedPlayers || []).includes(c.name)) return ack && ack({ ok: false, error: "forfeited" });
+
+      const activeRemaining = s.players.filter(p => !(s.forfeitedPlayers || []).includes(p));
+      const curFinished = s.finishedPlayers || [];
+      const answers = msg.answers || {};
+      const totalTimeMs = +msg.totalTimeMs || 0;
+      const qTimes = msg.qTimes || {};
+      const correctMap = msg.correctMap || {};
+
+      const pTimeEntry = { [c.name]: { totalTimeMs, qTimes } };
+      const pAnswersEntry = { [c.name]: answers };
+
+      const willBeFinished = curFinished.includes(c.name) ? curFinished : [...curFinished, c.name];
+      const allActiveDone = activeRemaining.length > 0 && activeRemaining.every(p => willBeFinished.includes(p));
+
+      const r = await pool.query(
+        `UPDATE sessions SET
+          finished_players = array_append(ARRAY(SELECT unnest(finished_players) WHERE unnest <> $2), $2),
+          rush_answers = rush_answers || $3::jsonb,
+          player_times = player_times || $4::jsonb,
+          status = CASE WHEN $5 = true THEN 'finished' ELSE status END,
+          finished_at = CASE WHEN $5 = true THEN now() ELSE finished_at END
+         WHERE id=$1 RETURNING *`,
+        [s.id, c.name, JSON.stringify(pAnswersEntry), JSON.stringify(pTimeEntry), allActiveDone]
+      );
+      s = sessionOut(r.rows[0]);
+
+      const now = Date.now(), today = dayKeyOf(now);
+      const qids = s.questionIds || [];
+      let insertCount = 0;
+      for (const qid of qids) {
+        if (answers[qid]) {
+          const sel = String(answers[qid]);
+          const isCorr = !!correctMap[qid];
+          await pool.query(
+            "INSERT INTO attempts(user_name, question_id, selected, is_correct, session_id) VALUES($1,$2,$3,$4,$5)",
+            [c.name, qid, sel, isCorr, s.id]
+          );
+          insertCount++;
+        }
+      }
+      if (insertCount > 0) {
+        await pool.query(
+          `UPDATE status SET today_count = CASE WHEN day_key=$2 THEN today_count+$4 ELSE $4 END,
+           day_key=$2, last_seen=$3 WHERE name=$1`, [c.name, today, now, insertCount]);
+      }
+      const tc = (await pool.query("SELECT today_count FROM status WHERE name=$1", [c.name])).rows[0];
+      io.to("session:" + s.id).emit("session:update", s);
+      emitPresenceCircle(c.name);
+      if (allActiveDone) {
+        for (const p of s.players) emitPresenceCircle(p);
+      }
+      ack && ack({ ok: true, session: s, todayCount: tc ? tc.today_count : 0 });
+    } catch (e) {
+      console.error("duel:rush_submit socket error", e.message);
+      ack && ack({ ok: false, error: "server" });
+    }
   });
 
   // Duel chat over socket (ephemeral — same validation as REST, zero storage).

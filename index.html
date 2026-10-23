@@ -2903,6 +2903,97 @@
       box-shadow: inset 0 1px 3px rgba(0, 0, 0, .07);
     }
 
+    /* ── RUSH mode & End Test styles ── */
+    .btn-end-test {
+      background: #059669;
+      color: #fff;
+      border: none;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 7px 16px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.1s ease;
+      box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
+    }
+    .btn-end-test:hover {
+      background: #047857;
+      transform: translateY(-1px);
+    }
+    .btn-end-test:active {
+      transform: translateY(0);
+    }
+    #ov-rush-waiting .modal {
+      padding: 32px 28px;
+      border-radius: 18px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+    }
+    .rush-wait-spinner {
+      font-size: 42px;
+      animation: rushPulse 1.4s ease-in-out infinite;
+      display: inline-block;
+    }
+    @keyframes rushPulse {
+      0%, 100% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.18); opacity: 1; }
+    }
+    #invitebanner .pill-mode {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      padding: 2px 8px;
+      border-radius: 12px;
+      text-transform: uppercase;
+      margin: 0 4px;
+    }
+    #invitebanner .pill-mode.mode-rush {
+      background: rgba(234, 88, 12, 0.15);
+      color: #ea580c;
+      border: 1px solid rgba(234, 88, 12, 0.3);
+    }
+    #invitebanner .pill-mode.mode-wait {
+      background: rgba(37, 99, 235, 0.12);
+      color: #2563eb;
+      border: 1px solid rgba(37, 99, 235, 0.25);
+    }
+    .challend-stats-box {
+      margin-top: 10px;
+      background: rgba(148, 163, 184, 0.1);
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      border-radius: 10px;
+      padding: 6px 12px;
+      text-align: center;
+      min-width: 86px;
+    }
+    .challend-stat-time {
+      font-family: 'Space Grotesk', var(--sans);
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .challend-stat-pace {
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    #ov-nav .navgrid button.answered {
+      background: #0284c7;
+      color: #fff;
+      border-color: #0284c7;
+    }
+    html[data-theme="dark"] .challend-stats-box {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+    html[data-theme="dark"] .challend-stat-time {
+      color: #f8fafc;
+    }
+    html[data-theme="dark"] .challend-stat-pace {
+      color: #94a3b8;
+    }
+
     /* ── Player Profile Modal ── */
     #ov-profile .profile-modal {
       width: 100%;
@@ -3254,6 +3345,7 @@
       <div id="navbtns">
         <button class="btn-ghost" id="backbtn">Back</button>
         <button class="btn-blue" id="nextbtn">Next</button>
+        <button class="btn-end-test" id="rush-endbtn" style="display:none">End Test 🏁</button>
       </div>
     </footer>
   </div>
@@ -3273,7 +3365,7 @@
       <div class="navcount" id="navcount"></div>
       <div class="navstats" id="navstats"></div>
       <div id="navgrid"></div>
-      <div class="mrow"><button id="navclose">Close</button></div>
+      <div class="mrow"><button id="navclose">Close</button><button id="nav-end-rush" style="display:none" class="btn-end-test">End Test 🏁</button></div>
     </div>
   </div>
 
@@ -3306,6 +3398,11 @@
       <div class="chall-rule"></div>
       <input type="hidden" id="chall-guest" value="">
       <div id="opp-list"></div>
+      <div class="fsec">Mode</div>
+      <div class="chall-pick" id="chall-mode-pick">
+        <button type="button" data-mode="wait" class="sel">⏳ WAIT</button>
+        <button type="button" data-mode="rush">⚡ RUSH</button>
+      </div>
       <div class="fsec">Questions</div>
       <div class="chall-pick" id="chall-pick">
         <button data-n="5">5</button>
@@ -3314,6 +3411,20 @@
       </div>
       <div id="chall-msg" class="duo-msg" style="display:none"></div>
       <div class="mrow"><button id="challclose">Cancel</button><button id="challsend">Send challenge →</button></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="ov-rush-waiting">
+    <div class="modal rush-wait-modal" style="max-width:440px;text-align:center;" onclick="event.stopPropagation()">
+      <div class="rush-wait-spinner">⚡</div>
+      <h2 style="font-size:22px;font-weight:700;margin:14px 0 6px;">Test Submitted!</h2>
+      <p style="color:var(--muted);font-size:14px;line-height:1.5;margin-bottom:18px;">
+        Your answers and finish time have been locked in.<br>
+        Waiting for other players to finish the test…
+      </p>
+      <div id="rush-wait-status" style="font-weight:600;font-size:13px;color:var(--blue);padding:8px 16px;background:rgba(0,119,255,0.08);border-radius:20px;display:inline-block;">
+        Opponents are still testing…
+      </div>
     </div>
   </div>
 
@@ -3399,6 +3510,7 @@
       <span class="pill-host" id="invite-from">Friend</span>
       <span class="pill-trio" id="invite-others" style="display:none"></span>
       <span>challenged you to</span>
+      <span class="pill-mode mode-wait" id="invite-mode">⏳ WAIT</span>
       <span class="pill-qs"><span id="invite-n">10</span> Qs</span>
     </div>
     <div class="pill-actions">
@@ -3663,29 +3775,42 @@
         (e.fig ? `<img class="figimg" src="${e.fig}" alt="Figure">` : '');
       $('stem').innerHTML = hlHTML(parts.stem, slist, hlPopNew, sUR);
       hlPopNew = -1;
-      const ans = S.answers[e.id], elim = S.elim[e.id] || [];
+      const isRush = window.Net && Net.inRush && Net.inRush();
+      const ans = isRush ? (Net.rushLocalAnswers && Net.rushLocalAnswers[e.id]) : S.answers[e.id];
+      const elim = S.elim[e.id] || [];
       $('opts').innerHTML = ['A', 'B', 'C', 'D'].filter(k => e.choices[k]).map(k => {
         let cls = 'opt';
         if (ans) {
-          if (k === e.correct) cls += ' correct';
-          else if (k === ans) cls += ' wrongpick';
+          if (isRush) {
+            if (k === ans) cls += ' picked';
+          } else {
+            if (k === e.correct) cls += ' correct';
+            else if (k === ans) cls += ' wrongpick';
+          }
         }
         if (elim.includes(k)) cls += ' eliminated';
         return `<div class="optrow"><div class="${cls}" data-k="${k}" role="button" tabindex="0">` +
           `<span class="letter">${k}</span><span class="opttxt">${fmtU(e.choices[k])}</span></div>` +
           `<button class="elim${elim.includes(k) ? ' on' : ''}" data-k="${k}" title="Eliminate choice">${k}</button></div>`;
       }).join('');
-      $('expbar').className = ans ? 'show' : '';
-      if (ans) {
-        $('expbar').innerHTML = `<span class="${ans === e.correct ? 'ok' : 'no'}">` +
-          `${ans === e.correct ? 'Correct' : 'Incorrect'} — answer ${e.correct}</span>` +
-          `<button id="expbtn">Why?</button>`;
-        $('exptext').innerHTML = `${fmtU(e.rationale)}<div class="pg">answers.pdf p.${e.a_page}</div>`;
-        $('exptext').className = '';
-      } else {
+      if (isRush) {
+        $('expbar').className = '';
         $('expbar').innerHTML = '';
         $('exptext').innerHTML = '';
         $('exptext').className = '';
+      } else {
+        $('expbar').className = ans ? 'show' : '';
+        if (ans) {
+          $('expbar').innerHTML = `<span class="${ans === e.correct ? 'ok' : 'no'}">` +
+            `${ans === e.correct ? 'Correct' : 'Incorrect'} — answer ${e.correct}</span>` +
+            `<button id="expbtn">Why?</button>`;
+          $('exptext').innerHTML = `${fmtU(e.rationale)}<div class="pg">answers.pdf p.${e.a_page}</div>`;
+          $('exptext').className = '';
+        } else {
+          $('expbar').innerHTML = '';
+          $('exptext').innerHTML = '';
+          $('exptext').className = '';
+        }
       }
       $('navpill').innerHTML = `Question ${pos + 1} <svg width="11" height="7" viewBox="0 0 11 7" style="vertical-align:1px"><path d="M1 5.8L5.5 1.5 10 5.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
       $('backbtn').disabled = pos === 0;
@@ -3731,6 +3856,10 @@
       const k = opt.dataset.k;
       // Challenge mode intercepts: locks input, writes session answer, reveals on both.
       if (window.Net && Net.inChallenge && Net.inChallenge()) {
+        if (Net.inRush && Net.inRush()) {
+          Net.recordRushAnswer(e.id, k);
+          return;
+        }
         Net.answerChallenge(e.id, k);
         return;
       }
@@ -3791,26 +3920,41 @@
     function openNav() {
       // Duel review: jump between played questions (read-only past, live answerable).
       if (window.Net && Net.inChallenge && Net.inChallenge() && Net.duelRange) {
+        const isRush = Net.inRush && Net.inRush();
         const r = Net.duelRange();
         if (r) {
           let html = '';
-          let nRight = 0, nWrong = 0;
-          for (let p = 0; p <= r.cur; p++) {
+          let nRight = 0, nWrong = 0, nAnswered = 0;
+          const maxP = isRush ? r.idxs.length - 1 : r.cur;
+          for (let p = 0; p <= maxP; p++) {
             const i = r.idxs[p], e = DB[i], id = e.id, c = [];
             if (i === idx) c.push('cur');
-            const a = S.answers[id];
+            const a = isRush ? (Net.rushLocalAnswers && Net.rushLocalAnswers[id]) : S.answers[id];
             if (a) {
-              const isR = a === e.correct;
-              c.push(isR ? 'right' : 'wrong');
-              if (isR) nRight++; else nWrong++;
+              nAnswered++;
+              if (isRush) {
+                c.push('answered');
+              } else {
+                const isR = a === e.correct;
+                c.push(isR ? 'right' : 'wrong');
+                if (isR) nRight++; else nWrong++;
+              }
             }
             const bm = S.marked.includes(id) ? '<span class="bm">&#128278;</span>' : '';
-            html += `<button class="${c.join(' ')}" data-i="${i}" style="animation-delay:${Math.min(p * 12, 240)}ms">⚔️${p + 1}${bm}</button>`;
+            html += `<button class="${c.join(' ')}" data-i="${i}" style="animation-delay:${Math.min(p * 12, 240)}ms">${isRush ? '⚡' : '⚔️'}${p + 1}${bm}</button>`;
           }
-          const played = r.idxs.slice(0, r.cur + 1);
-          const nAns = nRight + nWrong;
-          const nc0 = $('navcount'); if (nc0) nc0.textContent = nAns + " of " + played.length + " answered";
-          renderNavStats(nRight, nWrong);
+          const nc0 = $('navcount');
+          if (nc0) nc0.textContent = (isRush ? nAnswered : (nRight + nWrong)) + " of " + (isRush ? r.idxs.length : (r.cur + 1)) + " answered";
+          if (isRush) {
+            const ns = $('navstats');
+            if (ns) ns.innerHTML = `<span class="navstat-pill right" style="background:#0284c7;color:#fff">${nAnswered} answered</span> <span class="navstat-pill wrong">${r.idxs.length - nAnswered} remaining</span>`;
+            const nre = $('nav-end-rush');
+            if (nre) nre.style.display = "";
+          } else {
+            renderNavStats(nRight, nWrong);
+            const nre = $('nav-end-rush');
+            if (nre) nre.style.display = "none";
+          }
           $('navgrid').innerHTML = html;
           $('ov-nav').classList.add('open');
           const curBtn = $('navgrid').querySelector('.cur');

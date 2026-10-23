@@ -60,6 +60,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   players         TEXT[] NULL,
   accepted_by     TEXT[] NULL,
   forfeited_players TEXT[] NULL,
+  mode            TEXT NOT NULL DEFAULT 'wait' CHECK (mode IN ('wait', 'rush')),
+  rush_answers    JSONB NOT NULL DEFAULT '{}',
+  finished_players TEXT[] NOT NULL DEFAULT '{}',
+  player_times    JSONB NOT NULL DEFAULT '{}',
   CHECK (host <> guest)
 );
 CREATE INDEX IF NOT EXISTS sessions_guest_status_idx ON sessions(guest, status, created_at DESC);

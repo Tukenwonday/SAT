@@ -1206,6 +1206,23 @@ function wireChallengeUI() {
       if (FX()) FX().sound("tick");
     });
   }
+  const modePick = $("chall-mode-pick");
+  if (modePick && !modePick.dataset.wired) {
+    modePick.dataset.wired = "1";
+    modePick.addEventListener("click", ev => {
+      const b = ev.target.closest("button[data-mode]"); if (!b) return;
+      Net.challMode = b.dataset.mode || "wait";
+      modePick.querySelectorAll("button").forEach(x => x.classList.toggle("sel", x === b));
+      if (FX()) FX().sound("tick");
+    });
+  }
+  const reb = $("rush-endbtn");
+  if (reb) reb.onclick = () => Net.submitRushTest && Net.submitRushTest();
+  const nreb = $("nav-end-rush");
+  if (nreb) nreb.onclick = () => {
+    $("ov-nav").classList.remove("open");
+    Net.submitRushTest && Net.submitRushTest();
+  };
   const send = $("challsend");
   if (send) send.onclick = () => createChallenge().catch(() => {});
   const ex = $("challexit");
@@ -1226,6 +1243,7 @@ Net.inChallenge = () => !!(Net.session && Net.session.status === "active" &&
   (!Net.session.forfeitedPlayers || !Net.session.forfeitedPlayers.includes(Net.name)) &&
   Net.session.forfeitedBy !== Net.name &&
   (!Net._forfeited || !Net._forfeited[Net.session.id]));
+Net.inRush = () => Net.inChallenge() && !!(Net.session && Net.session.mode === "rush");
 
 Net.openProfile = async function (name) {
   name = cleanName(name);
@@ -1441,7 +1459,15 @@ async function createChallenge() {
     if (qids.length < n) { toast("Not enough questions in the current filter."); return; }
     const r = await api("/api/sessions", {
       method: "POST",
-      body: { host: Net.name, pin: getPin(Net.name), guests, guest: guests[0], totalQuestions: n, questionIds: qids },
+      body: {
+        host: Net.name,
+        pin: getPin(Net.name),
+        guests,
+        guest: guests[0],
+        totalQuestions: n,
+        questionIds: qids,
+        mode: Net.challMode || "wait",
+      },
     });
     if (!r || !r.ok) {
       toast(r && r.error === "unknown-guest"
@@ -1496,6 +1522,12 @@ function showInvite(id, s) {
   }
   const nEl = $("invite-n");
   if (nEl) nEl.textContent = s.totalQuestions || (s.questionIds || []).length || 10;
+  const mEl = $("invite-mode");
+  if (mEl) {
+    const isRush = s.mode === "rush";
+    mEl.textContent = isRush ? "⚡ RUSH" : "⏳ WAIT";
+    mEl.className = "pill-mode " + (isRush ? "mode-rush" : "mode-wait");
+  }
   const b = $("invitebanner");
   if (b) b.classList.add("show");
   if (FX()) FX().sound("alert");
@@ -1710,6 +1742,18 @@ function battleIdxs(s) {
 function enterBattle(s) {
   const idxs = battleIdxs(s);
   if (App().setChallenge) App().setChallenge(idxs, true);
+  if (s.mode === "rush") {
+    Net.rushMode = true;
+    Net.rushStartTime = Date.now();
+    Net.rushLocalAnswers = {};
+    Net.rushSubmitted = false;
+    Net.myTotalTimeMs = null;
+    if (App() && App().goTo && idxs.length) App().goTo(idxs[0]);
+    lockWaiting(false);
+    paintBattle(s);
+    if (FX()) FX().sound("go");
+    return;
+  }
   Net.qStartMs = Date.now();
   Net.revealed = false;
   Net._myPick = null; Net._reveals = {};
@@ -1724,6 +1768,23 @@ function enterBattle(s) {
   if (FX()) FX().sound("go");
 }
 function syncBattle(s) {
+  if (s.mode === "rush") {
+    if (Net.rushSubmitted) {
+      const rw = $("ov-rush-waiting");
+      if (rw) {
+        rw.classList.add("open");
+        const waitingFor = (s.players || []).filter(p => !(s.finishedPlayers || []).includes(p) && !(s.forfeitedPlayers || []).includes(p));
+        const st = $("rush-wait-status");
+        if (st) {
+          st.textContent = waitingFor.length
+            ? `Waiting for ${waitingFor.join(", ")} to finish…`
+            : "Calculating final scores…";
+        }
+      }
+    }
+    paintBattle(s);
+    return;
+  }
   const i = s.currentIndex || 0;
   if (Net._bIdx !== i) {
     Net._bIdx = i;
@@ -1760,6 +1821,38 @@ function syncBattle(s) {
 }
 
 function paintBattle(s) {
+  if (Net.inRush && Net.inRush()) {
+    const idxs = battleIdxs(s);
+    const n = s.totalQuestions || idxs.length;
+    let pos = 0;
+    try { pos = idxs.indexOf(App().idx); } catch (e) {}
+    if (pos < 0) pos = 0;
+    const players = s.players || [s.host, s.guest];
+    const forfeited = s.forfeitedPlayers || [];
+    const activePlayers = players.filter(p => !forfeited.includes(p));
+    const foes = activePlayers.filter(p => p !== Net.name);
+    sayChall(`⚡ RUSH · Q${pos + 1}/${n} vs ${foes.join(" & ") || "Friend"}`);
+    const pill = $("scorepill");
+    if (pill) {
+      pill.style.display = "";
+      const answeredCount = Object.keys(Net.rushLocalAnswers || {}).length;
+      pill.textContent = `Answered ${answeredCount}/${n}`;
+    }
+    const cb = $("challpill");
+    if (cb) cb.style.display = "none";
+    const nx = $("nextbtn");
+    const reb = $("rush-endbtn");
+    if (pos >= n - 1) {
+      if (nx) nx.style.display = "none";
+      if (reb) reb.style.display = "";
+    } else {
+      if (nx) nx.style.display = "";
+      if (reb) reb.style.display = "none";
+    }
+    const chb = $("chatbtn");
+    if (chb) chb.style.display = "none";
+    return;
+  }
   const i = s.currentIndex || 0, n = s.totalQuestions || (s.questionIds || []).length;
   const players = s.players || [s.host, s.guest];
   const forfeited = s.forfeitedPlayers || [];
@@ -1793,6 +1886,7 @@ function paintBattle(s) {
   try {
     ensureChatDom();
     const nx = $("nextbtn"); if (nx) nx.style.display = "none";
+    const reb = $("rush-endbtn"); if (reb) reb.style.display = "none";
     const chb = $("chatbtn"); if (chb) chb.style.display = "";
   } catch (e) {}
 }
@@ -1816,6 +1910,10 @@ Net.battleIndex = function () {
 Net.clampNav = function (i) {
   const r = Net.duelRange();
   if (!r) return i;
+  if (Net.inRush && Net.inRush()) {
+    if (r.idxs.includes(i)) return i;
+    return r.idxs[0];
+  }
   if (r.idxs.slice(0, r.cur + 1).includes(i)) return i;
   return r.idxs[r.cur];
 };
@@ -1823,17 +1921,45 @@ Net.clampNav = function (i) {
 Net.decorate = function () {
   if (!Net.inChallenge()) return;
   const s = Net.session;
+  const idxs = battleIdxs(s);
+  const back = $("backbtn"), next = $("nextbtn"), nav = $("navpill"), reb = $("rush-endbtn");
+
+  if (Net.inRush && Net.inRush()) {
+    let viewPos = -1;
+    try { viewPos = idxs.indexOf(App().idx); } catch (e) {}
+    if (viewPos < 0) viewPos = 0;
+    const n = s.totalQuestions || idxs.length;
+    if (back) back.disabled = viewPos <= 0;
+    if (viewPos >= n - 1) {
+      if (next) next.style.display = "none";
+      if (reb) reb.style.display = "";
+    } else {
+      if (next) { next.style.display = ""; next.disabled = false; }
+      if (reb) reb.style.display = "none";
+    }
+    if (nav) { nav.style.pointerEvents = ""; nav.style.opacity = ""; }
+    const wait = $("waitfriend");
+    if (wait) wait.classList.remove("show");
+    document.querySelectorAll("#opts .opt").forEach(o => o.classList.toggle("locked", !!Net.rushSubmitted));
+    const curQid = (s.questionIds || [])[viewPos];
+    const pickedLetter = Net.rushLocalAnswers ? Net.rushLocalAnswers[curQid] : null;
+    if (pickedLetter) {
+      const mine = document.querySelector('#opts .opt[data-k="' + pickedLetter + '"]');
+      if (mine) mine.classList.add("picked");
+    }
+    return;
+  }
+
   const i = s.currentIndex || 0;
   const qid = (s.questionIds || [])[i];
-  const idxs = battleIdxs(s);
   const cur = idxs.length ? Math.min(i, idxs.length - 1) : i;
   let viewPos = -1;
   try { viewPos = idxs.indexOf(App().idx); } catch (e) {}
   if (viewPos < 0) viewPos = cur;
   const reviewing = viewPos < cur;
-  const back = $("backbtn"), next = $("nextbtn"), nav = $("navpill");
   if (back) back.disabled = viewPos <= 0;
   if (next) next.disabled = !reviewing;
+  if (reb) reb.style.display = "none";
   if (nav) { nav.style.pointerEvents = ""; nav.style.opacity = ""; }
   const wait = $("waitfriend");
   const revMap = Net._reveals || {};
@@ -1883,6 +2009,94 @@ Net.decorate = function () {
     if (wait) wait.classList.add("show");
   } else {
     if (wait) wait.classList.remove("show");
+  }
+};
+
+Net.recordRushAnswer = function (qid, letter) {
+  if (Net.rushSubmitted) {
+    toast("Test submitted — answers are locked 🔒");
+    return;
+  }
+  Net.rushLocalAnswers = Net.rushLocalAnswers || {};
+  Net.rushLocalAnswers[qid] = letter;
+  if (App() && App().S) {
+    App().S.answers[qid] = letter;
+    App().S.elim[qid] = (App().S.elim[qid] || []).filter(x => x !== letter);
+    if (App().renderQ) App().renderQ();
+  }
+  if (FX()) FX().sound("tick");
+  paintBattle(Net.session);
+};
+
+Net.submitRushTest = async function () {
+  if (Net.rushSubmitted) return;
+  const s = Net.session;
+  if (!s || s.status !== "active") return;
+  const idxs = battleIdxs(s);
+  const n = s.totalQuestions || idxs.length;
+  const answers = Net.rushLocalAnswers || {};
+  const answeredCount = Object.keys(answers).length;
+  const confirmMsg = answeredCount < n
+    ? `You answered ${answeredCount} of ${n} questions.\nAre you sure you want to end your test now?`
+    : `Submit your test and finish? Once submitted, answers are locked.`;
+  if (!confirm(confirmMsg)) return;
+
+  Net.rushSubmitted = true;
+  const totalTimeMs = Math.max(1000, Date.now() - (Net.rushStartTime || Date.now()));
+  Net.myTotalTimeMs = totalTimeMs;
+
+  const correctMap = {};
+  for (const qid of (s.questionIds || [])) {
+    const e = Net.byId[qid];
+    if (e && answers[qid]) {
+      correctMap[qid] = (answers[qid] === e.correct);
+    }
+  }
+
+  const rw = $("ov-rush-waiting");
+  if (rw) {
+    rw.classList.add("open");
+    const st = $("rush-wait-status");
+    if (st) st.textContent = "Waiting for other players to finish…";
+  }
+  if (App() && App().renderQ) App().renderQ();
+
+  const payload = {
+    actor: Net.name,
+    pin: getPin(Net.name),
+    sessionId: s.id,
+    answers,
+    totalTimeMs,
+    qTimes: {},
+    correctMap,
+  };
+
+  let done = false;
+  if (Net.socket && Net.socket.connected) {
+    try {
+      const ack = await new Promise(res => {
+        let settled = false;
+        Net.socket.emit("duel:rush_submit", payload, (a) => { if (!settled) { settled = true; res(a); } });
+        setTimeout(() => { if (!settled) { settled = true; res(null); } }, 6000);
+      });
+      if (ack && ack.ok) done = true;
+    } catch (e) {}
+  }
+  if (!done) {
+    const r = await api("/api/sessions/" + encodeURIComponent(s.id), {
+      method: "PATCH",
+      body: { ...payload, action: "rush_submit" },
+    });
+    if (r && r.ok) done = true;
+  }
+  if (done) {
+    toast("Test submitted! 🏁 Waiting for opponents…");
+  } else {
+    toast("Failed to submit test (offline?) — retrying…");
+    await api("/api/sessions/" + encodeURIComponent(s.id), {
+      method: "PATCH",
+      body: { ...payload, action: "rush_submit" },
+    }).catch(() => {});
   }
 };
 
@@ -2028,109 +2242,215 @@ async function revealDuel(s, ca) {
 function correctOf(qid) { const e = Net.byId[qid]; return e ? e.correct : "?"; }
 
 async function closeSession(s) {
+  const pTimesObj = {};
+  if (Net.playerTimes) {
+    for (const p of (s.players || [s.host, s.guest])) {
+      const times = Net.playerTimes[p] || [];
+      const tot = times.reduce((a, b) => a + b, 0);
+      pTimesObj[p] = { totalTimeMs: tot, qTimes: times };
+    }
+  }
   await api("/api/sessions/" + encodeURIComponent(s.id),
-    { method: "PATCH", body: { actor: Net.name, pin: getPin(Net.name), action: "finish" } }).catch(() => {});
+    { method: "PATCH", body: { actor: Net.name, pin: getPin(Net.name), action: "finish", playerTimes: pTimesObj } }).catch(() => {});
 }
 
 function finishSession(s) {
   exitBattleView();
+  const rw = $("ov-rush-waiting");
+  if (rw) rw.classList.remove("open");
+
   const players = s.players || [s.host, s.guest];
   const forfeited = s.forfeitedPlayers || [];
   const activePlayers = players.filter(p => !forfeited.includes(p));
   const n = s.totalQuestions || (s.questionIds || []).length;
-  const avg = a => a && a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length / 100) / 10 + "s" : "—";
+
+  if (s.mode === "rush") {
+    Net.playerScores = {};
+    for (const p of players) {
+      const pAns = (s.rushAnswers && s.rushAnswers[p]) || (p === Net.name ? Net.rushLocalAnswers : {});
+      let corr = 0;
+      for (const qid of (s.questionIds || [])) {
+        const e = Net.byId[qid];
+        if (e && pAns && pAns[qid] === e.correct) corr++;
+      }
+      Net.playerScores[p] = corr;
+    }
+    Net.myScore = Net.playerScores[Net.name] || 0;
+    const foeName = activePlayers.find(p => p !== Net.name) || (s.host === Net.name ? s.guest : s.host);
+    Net.frScore = Net.playerScores[foeName] || 0;
+
+    // Sync my answers into App state for review
+    if (Net.rushLocalAnswers && App() && App().S) {
+      for (const [qid, letter] of Object.entries(Net.rushLocalAnswers)) {
+        App().S.answers[qid] = letter;
+        solvedCacheAdd(Net.name, qid);
+      }
+      saveAnswerCache(Net.name);
+    }
+  }
+
+  function fmtMs(ms) {
+    if (!ms || ms <= 0) return "—";
+    const sec = Math.round(ms / 1000);
+    const m = Math.floor(sec / 60);
+    const secRem = sec % 60;
+    return m > 0 ? `${m}m ${secRem}s` : `${secRem}s`;
+  }
+  function fmtPace(ms, totalQ) {
+    if (!ms || ms <= 0 || !totalQ) return "—";
+    return (ms / 1000 / totalQ).toFixed(1) + "s";
+  }
+
+  const getPlayerTotalTime = p => {
+    const pt = (s.playerTimes && s.playerTimes[p]) || null;
+    if (pt && typeof pt === "object") return +pt.totalTimeMs || 0;
+    if (pt && typeof pt === "number") return pt;
+    if (p === Net.name) {
+      if (Net.myTotalTimeMs) return Net.myTotalTimeMs;
+      if (Net.rushStartTime) return Math.max(1000, Date.now() - Net.rushStartTime);
+      if (Net.myTimes && Net.myTimes.length) return Net.myTimes.reduce((a, b) => a + b, 0);
+    }
+    const foe = activePlayers.find(x => x !== Net.name) || (s.host === Net.name ? s.guest : s.host);
+    if (p === foe) {
+      if (Net.frTimes && Net.frTimes.length) return Net.frTimes.reduce((a, b) => a + b, 0);
+    }
+    return 0;
+  };
 
   if (activePlayers.length <= 2) {
     const foe = activePlayers.find(p => p !== Net.name) || (s.host === Net.name ? s.guest : s.host);
-    const win = Net.myScore > Net.frScore, tie = Net.myScore === Net.frScore;
+    const myTime = getPlayerTotalTime(Net.name);
+    const foeTime = getPlayerTotalTime(foe);
+
+    let win = false, tie = false;
+    let wonOnTime = false, lostOnTime = false;
+    if (Net.myScore > Net.frScore) {
+      win = true;
+    } else if (Net.myScore < Net.frScore) {
+      win = false;
+    } else {
+      // Tie-breaker: faster total time wins (for BOTH wait and rush)
+      if (myTime > 0 && foeTime > 0 && myTime !== foeTime) {
+        if (myTime < foeTime) {
+          win = true;
+          wonOnTime = true;
+        } else {
+          win = false;
+          lostOnTime = true;
+        }
+      } else {
+        tie = true;
+      }
+    }
+
     if ($("end-trophy")) $("end-trophy").textContent = win ? "🏆" : tie ? "🤝" : "💪";
-    $("end-title").textContent = win ? "You win!" : tie ? "Dead even!" : esc(foe) + " wins!";
-    if ($("end-sub")) $("end-sub").textContent = "";
+    if (wonOnTime) {
+      $("end-title").textContent = "You win on time! ⚡";
+      if ($("end-sub")) {
+        $("end-sub").textContent = `Score tied ${Net.myScore}–${Net.frScore}, but you were ${fmtMs(foeTime - myTime)} faster!`;
+        $("end-sub").style.display = "block";
+      }
+    } else if (lostOnTime) {
+      $("end-title").textContent = esc(foe) + " wins on time! ⚡";
+      if ($("end-sub")) {
+        $("end-sub").textContent = `Score tied ${Net.myScore}–${Net.frScore}, but ${esc(foe)} was ${fmtMs(myTime - foeTime)} faster.`;
+        $("end-sub").style.display = "block";
+      }
+    } else {
+      $("end-title").textContent = win ? "You win!" : tie ? "Dead even!" : esc(foe) + " wins!";
+      if ($("end-sub")) $("end-sub").style.display = "none";
+    }
 
     $("end-grid").innerHTML = `
       <div class="challend-matchup">
         <div class="challend-col">
           <div class="challend-score ${win ? 'is-winner' : ''}">${Net.myScore}</div>
           <div class="challend-player">You</div>
+          <div class="challend-stats-box">
+            <div class="challend-stat-time">⏱️ ${fmtMs(myTime)}</div>
+            <div class="challend-stat-pace">${fmtPace(myTime, n)} avg / Q</div>
+          </div>
         </div>
         <div class="challend-vs">VS</div>
         <div class="challend-col">
           <div class="challend-score ${!win && !tie ? 'is-winner' : ''}">${Net.frScore}</div>
           <div class="challend-player">${esc(foe)}</div>
+          <div class="challend-stats-box">
+            <div class="challend-stat-time">⏱️ ${fmtMs(foeTime)}</div>
+            <div class="challend-stat-pace">${fmtPace(foeTime, n)} avg / Q</div>
+          </div>
         </div>
       </div>
     `;
 
     const endTimes = $("end-times");
-    if (endTimes) {
-      endTimes.innerHTML = `
-        <div class="challend-time-strip">
-          <div class="challend-time-card">
-            <span class="challend-time-label">Your Pace</span>
-            <span class="challend-time-value">${avg(Net.myTimes)}</span>
-          </div>
-          <div class="challend-time-card">
-            <span class="challend-time-label">${esc(foe)}'s Pace</span>
-            <span class="challend-time-value">${avg(Net.frTimes)}</span>
-          </div>
-        </div>
-      `;
-    }
+    if (endTimes) endTimes.innerHTML = "";
   } else {
     // 3-way (1v1v1) podium
-    const ranked = [...players].sort((a, b) => (Net.playerScores[b] || 0) - (Net.playerScores[a] || 0));
-    const topScore = Net.playerScores[ranked[0]] || 0;
-    const winners = ranked.filter(p => (Net.playerScores[p] || 0) === topScore);
-    const win = winners.includes(Net.name);
-    const tie = winners.length > 1;
-
-    if ($("end-trophy")) $("end-trophy").textContent = win ? (tie ? "🤝" : "🏆") : "💪";
-    $("end-title").textContent = win
-      ? (tie ? "Dead even!" : "You win!")
-      : (tie ? "Tie: " + winners.map(esc).join(" & ") : esc(ranked[0]) + " wins!");
-    if ($("end-sub")) $("end-sub").textContent = "";
-
-    // Podium layout: 2nd place on left, 1st (winner) in center, 3rd place on right
+    const ranked = [...players].sort((a, b) => {
+      const diff = (Net.playerScores[b] || 0) - (Net.playerScores[a] || 0);
+      if (diff !== 0) return diff;
+      const ta = getPlayerTotalTime(a) || Infinity;
+      const tb = getPlayerTotalTime(b) || Infinity;
+      return ta - tb;
+    });
     const p1 = ranked[0], p2 = ranked[1] || ranked[0], p3 = ranked[2] || ranked[1] || ranked[0];
     const s1 = Net.playerScores[p1] || 0;
     const s2 = Net.playerScores[p2] || 0;
     const s3 = Net.playerScores[p3] || 0;
+    const t1 = getPlayerTotalTime(p1), t2 = getPlayerTotalTime(p2), t3 = getPlayerTotalTime(p3);
+
+    const isTieWithP2 = s1 === s2 && t1 === t2;
+    const win = p1 === Net.name;
+    const tie = isTieWithP2;
+
+    if ($("end-trophy")) $("end-trophy").textContent = win ? (tie ? "🤝" : "🏆") : "💪";
+    if (win && s1 === s2 && t1 < t2) {
+      $("end-title").textContent = "You win on time! ⚡";
+      if ($("end-sub")) {
+        $("end-sub").textContent = `Score tied at ${s1}, but you were faster!`;
+        $("end-sub").style.display = "block";
+      }
+    } else {
+      $("end-title").textContent = win
+        ? (tie ? "Dead even!" : "You win!")
+        : (tie ? "Tie: " + [p1, p2].map(esc).join(" & ") : esc(p1) + " wins!");
+      if ($("end-sub")) $("end-sub").style.display = "none";
+    }
 
     $("end-grid").innerHTML = `
       <div class="challend-podium">
         <div class="challend-podium-col ${p2 === ranked[0] && tie ? 'winner' : ''}">
           <div class="challend-score ${p2 === ranked[0] && tie ? 'is-winner' : ''}">${s2}</div>
           <div class="challend-player">${p2 === Net.name ? 'You' : esc(p2)}</div>
+          <div class="challend-stats-box">
+            <div class="challend-stat-time">⏱️ ${fmtMs(t2)}</div>
+            <div class="challend-stat-pace">${fmtPace(t2, n)} avg</div>
+          </div>
         </div>
         <div class="challend-podium-col winner">
           <div class="challend-score is-winner">${s1}</div>
           <div class="challend-player">${p1 === Net.name ? 'You' : esc(p1)}</div>
+          <div class="challend-stats-box">
+            <div class="challend-stat-time">⏱️ ${fmtMs(t1)}</div>
+            <div class="challend-stat-pace">${fmtPace(t1, n)} avg</div>
+          </div>
         </div>
         <div class="challend-podium-col">
           <div class="challend-score">${s3}</div>
           <div class="challend-player">${p3 === Net.name ? 'You' : esc(p3)}</div>
+          <div class="challend-stats-box">
+            <div class="challend-stat-time">⏱️ ${fmtMs(t3)}</div>
+            <div class="challend-stat-pace">${fmtPace(t3, n)} avg</div>
+          </div>
         </div>
       </div>
     `;
 
     const endTimes = $("end-times");
-    if (endTimes) {
-      endTimes.innerHTML = `
-        <div class="challend-time-strip three-way">
-          ${players.slice(0, 3).map(p => {
-            const isMe = p === Net.name;
-            const pace = isMe ? avg(Net.myTimes) : (Net.playerTimes && Net.playerTimes[p] ? avg(Net.playerTimes[p]) : "—");
-            return `
-              <div class="challend-time-card">
-                <span class="challend-time-label">${isMe ? 'Your Pace' : esc(p) + "'s Pace"}</span>
-                <span class="challend-time-value">${pace}</span>
-              </div>
-            `;
-          }).join("")}
-        </div>
-      `;
-    }
+    if (endTimes) endTimes.innerHTML = "";
   }
+
   $("ov-challend").classList.add("open");
   if (FX()) {
     const isWin = $("end-title").textContent.includes("You win");
@@ -2152,6 +2472,14 @@ function finishSession(s) {
 }
 
 function exitBattleView() {
+  Net.rushMode = false;
+  Net.rushSubmitted = false;
+  Net.rushLocalAnswers = {};
+  Net.myTotalTimeMs = null;
+  const rw = $("ov-rush-waiting");
+  if (rw) rw.classList.remove("open");
+  const reb = $("rush-endbtn");
+  if (reb) reb.style.display = "none";
   try {
     if (Net._myPick && App() && App().S) {
       App().S.answers[Net._myPick.qid] = Net._myPick.letter;
