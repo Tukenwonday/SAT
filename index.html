@@ -3400,8 +3400,8 @@
       <div id="opp-list"></div>
       <div class="fsec">Mode</div>
       <div class="chall-pick" id="chall-mode-pick">
-        <button type="button" data-mode="wait" class="sel">⏳ WAIT</button>
-        <button type="button" data-mode="rush">⚡ RUSH</button>
+        <button type="button" data-mode="wait" class="sel">WAIT</button>
+        <button type="button" data-mode="rush">RUSH</button>
       </div>
       <div class="fsec">Questions</div>
       <div class="chall-pick" id="chall-pick">
@@ -3510,7 +3510,7 @@
       <span class="pill-host" id="invite-from">Friend</span>
       <span class="pill-trio" id="invite-others" style="display:none"></span>
       <span>challenged you to</span>
-      <span class="pill-mode mode-wait" id="invite-mode">⏳ WAIT</span>
+      <span class="pill-mode mode-wait" id="invite-mode">WAIT</span>
       <span class="pill-qs"><span id="invite-n">10</span> Qs</span>
     </div>
     <div class="pill-actions">
@@ -3941,7 +3941,7 @@
               }
             }
             const bm = S.marked.includes(id) ? '<span class="bm">&#128278;</span>' : '';
-            html += `<button class="${c.join(' ')}" data-i="${i}" style="animation-delay:${Math.min(p * 12, 240)}ms">${isRush ? '⚡' : '⚔️'}${p + 1}${bm}</button>`;
+            html += `<button class="${c.join(' ')}" data-i="${i}" style="animation-delay:${Math.min(p * 12, 240)}ms">${p + 1}${bm}</button>`;
           }
           const nc0 = $('navcount');
           if (nc0) nc0.textContent = (isRush ? nAnswered : (nRight + nWrong)) + " of " + (isRush ? r.idxs.length : (r.cur + 1)) + " answered";

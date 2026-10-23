@@ -595,7 +595,7 @@ function rosterRow(person, online) {
   if (inDuel) {
     const badge = document.createElement("span");
     badge.className = "rduel-tag";
-    badge.textContent = `⚔️ vs ${person.duel.vs}`;
+    badge.textContent = `vs ${person.duel.vs}`;
     nm.appendChild(badge);
     row.title = `${person.name} is in a live duel against ${person.duel.vs} · Click to view profile`;
   } else {
@@ -1084,7 +1084,7 @@ function renderLiveDuelsHtml(live) {
             `<span class="trio-name">${esc(p3)}</span>` +
           `</div>` +
         `</div>` +
-        `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b></div></div>`;
+        `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress</b></div></div>`;
     } else {
       const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
       const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
@@ -1093,7 +1093,7 @@ function renderLiveDuelsHtml(live) {
         `<div class="dmatch"><span class="nm left" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.host)}')">${esc(s.host)}</span>` +
         `<span class="mid dlive-score" id="live-sc-${s.id}">${mid}</span>` +
         `<span class="nm right" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.guest)}')">${esc(s.guest)}</span></div>` +
-        `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b></div></div>`;
+        `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress</b></div></div>`;
     }
   });
   return h;
@@ -1144,14 +1144,14 @@ function updateLiveDuelsInPlace(box, live) {
           <span class="trio-name">${esc(p3)}</span>
         </div>`;
       if (scoreEl && scoreEl.innerHTML !== trioHtml) scoreEl.innerHTML = trioHtml;
-      const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b>`;
+      const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress</b>`;
       if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
     } else {
       const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
       const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
       const mid = hs.ok + "–" + gs.ok;
       if (scoreEl && scoreEl.textContent !== mid) scoreEl.textContent = mid;
-      const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress ⚔️</b>`;
+      const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress</b>`;
       if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
     }
   });
@@ -1525,7 +1525,7 @@ function showInvite(id, s) {
   const mEl = $("invite-mode");
   if (mEl) {
     const isRush = s.mode === "rush";
-    mEl.textContent = isRush ? "⚡ RUSH" : "⏳ WAIT";
+    mEl.textContent = isRush ? "RUSH" : "WAIT";
     mEl.className = "pill-mode " + (isRush ? "mode-rush" : "mode-wait");
   }
   const b = $("invitebanner");
@@ -1831,7 +1831,7 @@ function paintBattle(s) {
     const forfeited = s.forfeitedPlayers || [];
     const activePlayers = players.filter(p => !forfeited.includes(p));
     const foes = activePlayers.filter(p => p !== Net.name);
-    sayChall(`⚡ RUSH · Q${pos + 1}/${n} vs ${foes.join(" & ") || "Friend"}`);
+    sayChall(`RUSH · Q${pos + 1}/${n} vs ${foes.join(" & ") || "Friend"}`);
     const pill = $("scorepill");
     if (pill) {
       pill.style.display = "";
@@ -1860,7 +1860,7 @@ function paintBattle(s) {
   const pill = $("scorepill");
   if (activePlayers.length <= 2) {
     const foe = activePlayers.find(p => p !== Net.name) || (s.host === Net.name ? s.guest : s.host);
-    sayChall(`⚔️ Q${Math.min(i + 1, n)}/${n} vs ${foe}`);
+    sayChall(`Q${Math.min(i + 1, n)}/${n} vs ${foe}`);
     if (pill) {
       pill.style.display = "";
       const myScore = Net.playerScores ? (Net.playerScores[Net.name] || 0) : Net.myScore;
@@ -1871,7 +1871,7 @@ function paintBattle(s) {
       if (prev !== pill.dataset.sc && FX()) FX().sound("tada");
     }
   } else {
-    sayChall(`⚔️ Q${Math.min(i + 1, n)}/${n} · 3-Way Battle`);
+    sayChall(`Q${Math.min(i + 1, n)}/${n} · 3-Way Battle`);
     if (pill) {
       pill.style.display = "";
       const scoreStr = activePlayers.map(p => (p === Net.name ? "You" : p) + " " + (Net.playerScores ? (Net.playerScores[p] || 0) : 0)).join(" · ");
