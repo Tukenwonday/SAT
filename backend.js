@@ -842,42 +842,60 @@ function ensureHistCss() {
     ".prow .nm{font-size:14px;font-weight:700;letter-spacing:-.2px}" +
     ".prow .ct{margin-left:auto;font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}" +
     ".prow .ct.zero{color:#c3c7d4}" +
-    ".drow{padding:9px 6px 8px;text-align:center;border-bottom:1px solid #f1f5f9;" +
-    "animation:rowin-p1 .25s cubic-bezier(.2,.9,.3,1) backwards}" +
+    /* Duels category toggle (2 Players vs 3 Players) */
+    ".duels-cat-nav{display:flex;gap:4px;margin:4px 0 10px;padding:3px;background:#f1f3f9;border-radius:10px;flex:0 0 auto}" +
+    "html[data-theme='dark'] .duels-cat-nav{background:#16192c}" +
+    ".duels-cat-btn{flex:1;padding:6px 10px;font-size:12.5px;font-weight:700;font-family:var(--sans);" +
+    "border:none;background:transparent;color:var(--muted);border-radius:8px;cursor:pointer;transition:all .15s ease}" +
+    ".duels-cat-btn:hover{color:var(--ink)}" +
+    "html[data-theme='dark'] .duels-cat-btn:hover{color:#fff}" +
+    ".duels-cat-btn.sel{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(16,18,35,.1);font-weight:800}" +
+    "html[data-theme='dark'] .duels-cat-btn.sel{background:#262b48;color:#fff}" +
+    /* Date grouping headers */
+    ".duel-date-group{margin-bottom:12px}" +
+    ".duel-date-header{display:flex;align-items:center;gap:10px;margin:12px 4px 6px}" +
+    ".duel-date-group:first-child .duel-date-header{margin-top:4px}" +
+    ".duel-date-text{font-size:12px;font-weight:800;letter-spacing:.05em;color:var(--muted);font-variant-numeric:tabular-nums}" +
+    ".duel-date-line{flex:1;height:1px;background:#eef1f6}" +
+    "html[data-theme='dark'] .duel-date-line{background:#232742}" +
+    /* Duel match cards */
+    ".drow{padding:12px 8px 10px;text-align:center;border-bottom:1px solid #f1f5f9;border-radius:12px;margin-bottom:2px;" +
+    "transition:background .15s ease;animation:rowin-p1 .25s cubic-bezier(.2,.9,.3,1) backwards}" +
     ".drow:last-child{border-bottom:none}" +
     ".drow:hover{background:#fafbff}" +
     "html[data-theme='dark'] .drow:hover{background:#1e2238}" +
     "html[data-theme='dark'] .drow{border-color:#232742}" +
-    ".dmatch{display:flex;align-items:baseline;justify-content:center;gap:14px}" +
-    ".dmatch .nm{flex:1;min-width:0;font-size:14px;font-weight:700;letter-spacing:-.2px;" +
-    "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-    ".dmatch .nm.left{text-align:left}" +
-    ".dmatch .nm.right{text-align:right}" +
-    ".dmatch .nm.dim{opacity:.45}" +
-    ".dmatch .mid{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;" +
-    "white-space:nowrap;letter-spacing:-.3px}" +
-    ".trio-grid{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:baseline;padding:0 4px;gap:8px}" +
-    ".trio-col{display:flex;flex-direction:column;align-items:center;min-width:0;cursor:pointer}" +
-    ".trio-col.col-left{align-items:flex-start}" +
-    ".trio-col.col-mid{align-items:center}" +
-    ".trio-col.col-right{align-items:flex-end}" +
-    ".trio-score{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1;letter-spacing:-.3px}" +
-    ".trio-score.dim{opacity:.45}" +
-    ".trio-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;margin-top:3px;letter-spacing:-.2px}" +
-    ".trio-name.dim{opacity:.45}" +
+    /* 2-Player Duo Grid: scores centered directly over names */
+    ".duo-grid{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 8px;gap:10px}" +
+    ".duo-col{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-width:0;cursor:pointer}" +
+    ".duo-score{font-size:32px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-.5px;text-align:center;display:block;width:100%}" +
+    ".duo-score.dim{opacity:.4}" +
+    ".duo-name{font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;margin-top:4px;letter-spacing:-.2px;text-align:center;display:block;width:100%}" +
+    ".duo-name.dim{opacity:.4}" +
+    ".duo-col:hover .duo-name{text-decoration:underline}" +
+    ".duo-mid{display:flex;align-items:center;justify-content:center;padding-bottom:18px}" +
+    ".duo-vs{font-size:18px;font-weight:700;color:var(--muted);opacity:.35;user-select:none}" +
+    /* 3-Player Trio Grid: scores centered directly over names */
+    ".trio-grid{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;padding:0 4px;gap:8px}" +
+    ".trio-col{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-width:0;cursor:pointer}" +
+    ".trio-col.col-left,.trio-col.col-mid,.trio-col.col-right{align-items:center;text-align:center}" +
+    ".trio-score{font-size:28px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-.5px;text-align:center;display:block;width:100%}" +
+    ".trio-score.dim{opacity:.4}" +
+    ".trio-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;margin-top:4px;letter-spacing:-.2px;text-align:center;display:block;width:100%}" +
+    ".trio-name.dim{opacity:.4}" +
     ".trio-col:hover .trio-name{text-decoration:underline}" +
-    ".dsub{font-size:11px;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums}" +
-    ".dsub2{font-size:11px;color:var(--muted);margin-top:1px}" +
-    ".dlive-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;letter-spacing:.08em;color:#e11d48;padding:4px 6px 2px}" +
+    /* Subtle Questions count */
+    ".dsub-qs{font-size:11px;color:var(--muted);opacity:.65;margin-top:5px;font-weight:500;text-align:center;letter-spacing:.02em}" +
+    /* Live Duels */
+    ".dlive-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;letter-spacing:.08em;color:#e11d48;padding:4px 6px 4px}" +
     ".dlive-dot{width:6px;height:6px;border-radius:50%;background:#e11d48;animation:pulselive 1.2s infinite ease-in-out}" +
     "@keyframes pulselive{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(1.35)}}" +
-    ".dlive-row{background:#fff8f8;border:1px solid #ffe4e6;border-radius:10px;margin-bottom:8px}" +
+    ".dlive-row{background:#fff8f8;border:1px solid #ffe4e6;border-radius:12px;margin-bottom:8px}" +
+    "html[data-theme='dark'] .dlive-row{background:#2a1620;border-color:#4a1e2d}" +
     ".dlive-score{color:#e11d48}" +
-    ".dsep{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:8px 6px 3px;border-top:1px dashed #e2e8f0;margin-top:4px}" +
     ".dmore-spin{padding:10px;text-align:center;font-size:11.5px;color:var(--muted);font-weight:600}" +
     ".dmore-end{padding:8px;text-align:center;font-size:11px;color:#94a3b8;font-weight:500}" +
-    ".hempty{padding:28px 10px;text-align:center;font-size:13.5px;font-weight:600;" +
-    "color:var(--muted);line-height:1.6}";
+    ".hempty{padding:28px 10px;text-align:center;font-size:13.5px;font-weight:600;color:var(--muted);line-height:1.6}";
   document.head.appendChild(st);
 }
 
@@ -932,7 +950,6 @@ async function renderDaily(box) {
 
 function renderDuelItem(s, quiet, i) {
   const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
-  const day = String(dayKeyOf(s.createdAt)).slice(5); // MM-DD: the year is noise
   const rowAnim = quiet ? ' style="animation:none"' : ` style="animation-delay:${Math.min((i || 0) * 30, 210)}ms"`;
   if (players.length > 2) {
     const sorted = [...players].sort((a, b) => ((s.scores && s.scores[b]) ? s.scores[b].ok : 0) - ((s.scores && s.scores[a]) ? s.scores[a].ok : 0));
@@ -960,22 +977,168 @@ function renderDuelItem(s, quiet, i) {
           `<span class="trio-name${dim3}">${esc(p3)}</span>` +
         `</div>` +
       `</div>` +
-      `<div class="dsub">${esc(day)}</div>` +
-      `<div class="dsub2">${s.totalQuestions} questions</div></div>`;
+      `<div class="dsub-qs">${s.totalQuestions} questions</div></div>`;
   } else {
-    const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
-    const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
-    const tie = hs.ok === gs.ok;
-    const lw = hs.ok > gs.ok ? "r" : (hs.ok < gs.ok ? "l" : ""); // dim the loser
-    const mid = hs.ok + "–" + gs.ok;
-    const title = tie ? "Dead even" : ((hs.ok > gs.ok ? s.host : s.guest) + " wins");
+    const p1 = s.host, p2 = s.guest;
+    const hs = (s.scores && s.scores[p1]) || { ok: 0, tot: 0 };
+    const gs = (s.scores && s.scores[p2]) || { ok: 0, tot: 0 };
+    const s1 = hs.ok, s2 = gs.ok;
+    const topScore = Math.max(s1, s2);
+    const dim1 = s1 < topScore ? " dim" : "";
+    const dim2 = s2 < topScore ? " dim" : "";
+
     return `<div class="drow"${rowAnim}>` +
-      `<div class="dmatch"><span class="nm left${lw === "l" ? " dim" : ""}" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.host)}')">${esc(s.host)}</span>` +
-      `<span class="mid">${mid}</span>` +
-      `<span class="nm right${lw === "r" ? " dim" : ""}" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.guest)}')">${esc(s.guest)}</span></div>` +
-      `<div class="dsub">${esc(day)}</div>` +
-      `<div class="dsub2">${s.totalQuestions} questions · ${esc(title)}</div></div>`;
+      `<div class="duo-grid">` +
+        `<div class="duo-col col-left" onclick="event.stopPropagation();Net.openProfile('${esc(p1)}')">` +
+          `<span class="duo-score${dim1}">${s1}</span>` +
+          `<span class="duo-name${dim1}">${esc(p1)}</span>` +
+        `</div>` +
+        `<div class="duo-mid"><span class="duo-vs">—</span></div>` +
+        `<div class="duo-col col-right" onclick="event.stopPropagation();Net.openProfile('${esc(p2)}')">` +
+          `<span class="duo-score${dim2}">${s2}</span>` +
+          `<span class="duo-name${dim2}">${esc(p2)}</span>` +
+        `</div>` +
+      `</div>` +
+      `<div class="dsub-qs">${s.totalQuestions} questions</div></div>`;
   }
+}
+
+function renderLiveDuelsHtml(live) {
+  if (!live || !live.length) return "";
+  let h = `<div class="dlive-head"><span class="dlive-dot"></span> LIVE DUELS</div>`;
+  live.forEach(s => {
+    const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
+    const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
+    if (players.length > 2) {
+      const p1 = players[0], p2 = players[1] || players[0], p3 = players[2] || players[1] || players[0];
+      const s1 = (s.scores && s.scores[p1]) ? s.scores[p1].ok : 0;
+      const s2 = (s.scores && s.scores[p2]) ? s.scores[p2].ok : 0;
+      const s3 = (s.scores && s.scores[p3]) ? s.scores[p3].ok : 0;
+      h += `<div class="drow dlive-row" id="live-row-${s.id}" style="animation:none">` +
+        `<div class="trio-grid" id="live-sc-${s.id}">` +
+          `<div class="trio-col col-left" onclick="event.stopPropagation();Net.openProfile('${esc(p1)}')">` +
+            `<span class="trio-score dlive-score">${s1}</span>` +
+            `<span class="trio-name">${esc(p1)}</span>` +
+          `</div>` +
+          `<div class="trio-col col-mid" onclick="event.stopPropagation();Net.openProfile('${esc(p2)}')">` +
+            `<span class="trio-score dlive-score">${s2}</span>` +
+            `<span class="trio-name">${esc(p2)}</span>` +
+          `</div>` +
+          `<div class="trio-col col-right" onclick="event.stopPropagation();Net.openProfile('${esc(p3)}')">` +
+            `<span class="trio-score dlive-score">${s3}</span>` +
+            `<span class="trio-name">${esc(p3)}</span>` +
+          `</div>` +
+        `</div>` +
+        `<div class="dsub-qs" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress</b></div></div>`;
+    } else {
+      const p1 = s.host, p2 = s.guest;
+      const hs = (s.scores && s.scores[p1]) || { ok: 0, tot: 0 };
+      const gs = (s.scores && s.scores[p2]) || { ok: 0, tot: 0 };
+      h += `<div class="drow dlive-row" id="live-row-${s.id}" style="animation:none">` +
+        `<div class="duo-grid" id="live-sc-${s.id}">` +
+          `<div class="duo-col col-left" onclick="event.stopPropagation();Net.openProfile('${esc(p1)}')">` +
+            `<span class="duo-score dlive-score">${hs.ok}</span>` +
+            `<span class="duo-name">${esc(p1)}</span>` +
+          `</div>` +
+          `<div class="duo-mid"><span class="duo-vs">—</span></div>` +
+          `<div class="duo-col col-right" onclick="event.stopPropagation();Net.openProfile('${esc(p2)}')">` +
+            `<span class="duo-score dlive-score">${gs.ok}</span>` +
+            `<span class="duo-name">${esc(p2)}</span>` +
+          `</div>` +
+        `</div>` +
+        `<div class="dsub-qs" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress</b></div></div>`;
+    }
+  });
+  return h;
+}
+
+function renderDuelsContent() {
+  const container = $("duels-content");
+  if (!container) return;
+
+  const cat = Net._duelsCat || "2p";
+  const is2p = (cat === "2p");
+
+  const catLive = (Net._liveSessions || []).filter(s => {
+    const n = (s.players && s.players.length) ? s.players.length : 2;
+    return is2p ? (n <= 2) : (n > 2);
+  });
+
+  const catSessions = (Net._duelSessions || []).filter(s => {
+    const n = (s.players && s.players.length) ? s.players.length : 2;
+    return is2p ? (n <= 2) : (n > 2);
+  });
+
+  if (!catLive.length && !catSessions.length) {
+    container.innerHTML = `<p class="hempty">No ${is2p ? "2-player (1v1)" : "3-player (group)"} duels yet.</p>`;
+    return;
+  }
+
+  let h = "";
+  if (catLive.length) {
+    h += `<div id="live-duels-wrap">${renderLiveDuelsHtml(catLive)}</div>`;
+  }
+
+  if (catSessions.length) {
+    const groups = [];
+    const map = new Map();
+    for (const s of catSessions) {
+      const dk = dayKeyOf(s.createdAt);
+      if (!map.has(dk)) {
+        const g = { dayKey: dk, displayDate: dk.slice(5), sessions: [] };
+        map.set(dk, g);
+        groups.push(g);
+      }
+      map.get(dk).sessions.push(s);
+    }
+
+    h += `<div id="duels-list">`;
+    groups.forEach(g => {
+      h += `<div class="duel-date-group">` +
+        `<div class="duel-date-header">` +
+          `<span class="duel-date-text">${esc(g.displayDate)}</span>` +
+          `<span class="duel-date-line"></span>` +
+        `</div>` +
+        `<div class="duel-date-matches">` +
+          g.sessions.map((s, idx) => renderDuelItem(s, false, idx)).join("") +
+        `</div>` +
+      `</div>`;
+    });
+    h += `</div>`;
+  }
+
+  h += `<div id="duels-more">` +
+    (Net._duelHasMore ? "" : '<div class="dmore-end">All duels loaded</div>') +
+  `</div>`;
+
+  container.innerHTML = h;
+}
+
+function updateLiveDuelsInPlace(box, live) {
+  Net._liveSessions = live || [];
+  const cat = Net._duelsCat || "2p";
+  const is2p = (cat === "2p");
+  const catLive = (Net._liveSessions || []).filter(s => {
+    const n = (s.players && s.players.length) ? s.players.length : 2;
+    return is2p ? (n <= 2) : (n > 2);
+  });
+
+  let wrap = $("live-duels-wrap");
+  if (!catLive.length) {
+    if (wrap) wrap.remove();
+    return;
+  }
+  const content = $("duels-content");
+  if (!wrap) {
+    if (content) {
+      wrap = document.createElement("div");
+      wrap.id = "live-duels-wrap";
+      wrap.innerHTML = renderLiveDuelsHtml(catLive);
+      content.prepend(wrap);
+    }
+    return;
+  }
+  wrap.innerHTML = renderLiveDuelsHtml(catLive);
 }
 
 // Duels: live challenges + finished challenges with smooth infinite scroll
@@ -985,9 +1148,11 @@ async function renderDuels(box) {
   Net._duelHasMore = true;
   Net._duelLoading = false;
   Net._loadedDuelIds = new Set();
+  Net._duelSessions = [];
+  Net._liveSessions = [];
 
   const r = await api("/api/sessions/history?user=" + encodeURIComponent(Net.name) +
-    "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends&limit=10&offset=0");
+    "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends&limit=15&offset=0");
   if (!r || !r.ok) {
     box.innerHTML = "<p>Couldn't load duels (offline?).</p>";
     return;
@@ -1000,27 +1165,46 @@ async function renderDuels(box) {
     return;
   }
 
-  list.forEach(s => Net._loadedDuelIds.add(s.id));
+  Net._liveSessions = live;
+  list.forEach(s => {
+    Net._loadedDuelIds.add(s.id);
+    Net._duelSessions.push(s);
+  });
   Net._duelOffset = sessions.length;
-  Net._duelHasMore = r.hasMore && sessions.length >= 10;
+  Net._duelHasMore = r.hasMore && sessions.length >= 15;
 
-  let h = "";
-  if (live.length) {
-    h += `<div id="live-duels-wrap">${renderLiveDuelsHtml(live)}</div>`;
+  // Default to 2p unless user has exclusively 3p duels
+  if (!Net._duelsCat) {
+    const has2p = Net._duelSessions.some(s => ((s.players && s.players.length) ? s.players.length : 2) <= 2) ||
+      Net._liveSessions.some(s => ((s.players && s.players.length) ? s.players.length : 2) <= 2);
+    const has3p = Net._duelSessions.some(s => ((s.players && s.players.length) ? s.players.length : 2) > 2) ||
+      Net._liveSessions.some(s => ((s.players && s.players.length) ? s.players.length : 2) > 2);
+    Net._duelsCat = (!has2p && has3p) ? "3p" : "2p";
   }
-  if (list.length) {
-    h += `<div id="duels-list">`;
-    list.forEach((s, i) => {
-      h += renderDuelItem(s, false, i);
-    });
-    h += `</div>`;
-    h += `<div id="duels-more">`;
-    if (!Net._duelHasMore) {
-      h += `<div class="dmore-end">All duels loaded</div>`;
-    }
-    h += `</div>`;
-  }
-  box.innerHTML = h;
+
+  box.innerHTML =
+    `<div class="duels-cat-nav">` +
+      `<button type="button" class="duels-cat-btn ${Net._duelsCat === "2p" ? "sel" : ""}" id="duels-cat-2p">2 Players</button>` +
+      `<button type="button" class="duels-cat-btn ${Net._duelsCat === "3p" ? "sel" : ""}" id="duels-cat-3p">3 Players</button>` +
+    `</div>` +
+    `<div id="duels-content"></div>`;
+
+  const btn2p = $("duels-cat-2p");
+  const btn3p = $("duels-cat-3p");
+  if (btn2p) btn2p.onclick = () => {
+    Net._duelsCat = "2p";
+    btn2p.classList.add("sel");
+    if (btn3p) btn3p.classList.remove("sel");
+    renderDuelsContent();
+  };
+  if (btn3p) btn3p.onclick = () => {
+    Net._duelsCat = "3p";
+    btn3p.classList.add("sel");
+    if (btn2p) btn2p.classList.remove("sel");
+    renderDuelsContent();
+  };
+
+  renderDuelsContent();
 
   // Smooth throttled infinite scroll
   let ticking = false;
@@ -1057,104 +1241,6 @@ async function renderDuels(box) {
   }
 }
 
-function renderLiveDuelsHtml(live) {
-  let h = `<div class="dlive-head"><span class="dlive-dot"></span> LIVE DUELS</div>`;
-  live.forEach(s => {
-    const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
-    const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
-    if (players.length > 2) {
-      const p1 = players[0], p2 = players[1] || players[0], p3 = players[2] || players[1] || players[0];
-      const s1 = (s.scores && s.scores[p1]) ? s.scores[p1].ok : 0;
-      const s2 = (s.scores && s.scores[p2]) ? s.scores[p2].ok : 0;
-      const s3 = (s.scores && s.scores[p3]) ? s.scores[p3].ok : 0;
-      h += `<div class="drow dlive-row" id="live-row-${s.id}" style="animation:none">` +
-        `<div class="trio-grid" id="live-sc-${s.id}">` +
-          `<div class="trio-col col-left" onclick="event.stopPropagation();Net.openProfile('${esc(p1)}')">` +
-            `<span class="trio-score dlive-score">${s1}</span>` +
-            `<span class="trio-name">${esc(p1)}</span>` +
-          `</div>` +
-          `<div class="trio-col col-mid" onclick="event.stopPropagation();Net.openProfile('${esc(p2)}')">` +
-            `<span class="trio-score dlive-score">${s2}</span>` +
-            `<span class="trio-name">${esc(p2)}</span>` +
-          `</div>` +
-          `<div class="trio-col col-right" onclick="event.stopPropagation();Net.openProfile('${esc(p3)}')">` +
-            `<span class="trio-score dlive-score">${s3}</span>` +
-            `<span class="trio-name">${esc(p3)}</span>` +
-          `</div>` +
-        `</div>` +
-        `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress</b></div></div>`;
-    } else {
-      const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
-      const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
-      const mid = hs.ok + "–" + gs.ok;
-      h += `<div class="drow dlive-row" id="live-row-${s.id}" style="animation:none">` +
-        `<div class="dmatch"><span class="nm left" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.host)}')">${esc(s.host)}</span>` +
-        `<span class="mid dlive-score" id="live-sc-${s.id}">${mid}</span>` +
-        `<span class="nm right" style="cursor:pointer" onclick="event.stopPropagation();Net.openProfile('${esc(s.guest)}')">${esc(s.guest)}</span></div>` +
-        `<div class="dsub" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress</b></div></div>`;
-    }
-  });
-  return h;
-}
-
-function updateLiveDuelsInPlace(box, live) {
-  let wrap = $("live-duels-wrap");
-  if (!live || !live.length) {
-    if (wrap) wrap.remove();
-    return;
-  }
-  if (!wrap) {
-    wrap = document.createElement("div");
-    wrap.id = "live-duels-wrap";
-    wrap.innerHTML = renderLiveDuelsHtml(live);
-    const duelsList = $("duels-list");
-    if (duelsList) box.insertBefore(wrap, duelsList);
-    else box.prepend(wrap);
-    return;
-  }
-  const currentIds = Array.from(wrap.querySelectorAll(".dlive-row")).map(el => el.id.replace("live-row-", "")).join(",");
-  const newIds = live.map(s => s.id).join(",");
-  if (currentIds !== newIds) {
-    wrap.innerHTML = renderLiveDuelsHtml(live);
-    return;
-  }
-  live.forEach(s => {
-    const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
-    const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
-    const scoreEl = $("live-sc-" + s.id);
-    const subEl = $("live-sub-" + s.id);
-    if (players.length > 2) {
-      const p1 = players[0], p2 = players[1] || players[0], p3 = players[2] || players[1] || players[0];
-      const s1 = (s.scores && s.scores[p1]) ? s.scores[p1].ok : 0;
-      const s2 = (s.scores && s.scores[p2]) ? s.scores[p2].ok : 0;
-      const s3 = (s.scores && s.scores[p3]) ? s.scores[p3].ok : 0;
-      const trioHtml = `
-        <div class="trio-col col-left" onclick="event.stopPropagation();Net.openProfile('${esc(p1)}')">
-          <span class="trio-score dlive-score">${s1}</span>
-          <span class="trio-name">${esc(p1)}</span>
-        </div>
-        <div class="trio-col col-mid" onclick="event.stopPropagation();Net.openProfile('${esc(p2)}')">
-          <span class="trio-score dlive-score">${s2}</span>
-          <span class="trio-name">${esc(p2)}</span>
-        </div>
-        <div class="trio-col col-right" onclick="event.stopPropagation();Net.openProfile('${esc(p3)}')">
-          <span class="trio-score dlive-score">${s3}</span>
-          <span class="trio-name">${esc(p3)}</span>
-        </div>`;
-      if (scoreEl && scoreEl.innerHTML !== trioHtml) scoreEl.innerHTML = trioHtml;
-      const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress</b>`;
-      if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
-    } else {
-      const hs = (s.scores && s.scores[s.host]) || { ok: 0, tot: 0 };
-      const gs = (s.scores && s.scores[s.guest]) || { ok: 0, tot: 0 };
-      const mid = hs.ok + "–" + gs.ok;
-      if (scoreEl && scoreEl.textContent !== mid) scoreEl.textContent = mid;
-      const subHtml = `Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress</b>`;
-      if (subEl && subEl.innerHTML !== subHtml) subEl.innerHTML = subHtml;
-    }
-  });
-}
-
 async function loadMoreDuels(box) {
   if (Net._duelLoading || !Net._duelHasMore) return;
   Net._duelLoading = true;
@@ -1163,7 +1249,7 @@ async function loadMoreDuels(box) {
 
   const curOffset = Net._duelOffset || 0;
   const r = await api("/api/sessions/history?user=" + encodeURIComponent(Net.name) +
-    "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends&limit=10&offset=" + curOffset);
+    "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends&limit=15&offset=" + curOffset);
 
   Net._duelLoading = false;
   if (!r || !r.ok) {
@@ -1174,22 +1260,16 @@ async function loadMoreDuels(box) {
   Net._duelOffset = curOffset + sessions.length;
 
   const newFinished = sessions.filter(s => s.status === "finished" && !Net._loadedDuelIds.has(s.id));
-  const listEl = $("duels-list");
-  if (listEl && newFinished.length) {
-    let addHtml = "";
-    newFinished.forEach((s, i) => {
-      Net._loadedDuelIds.add(s.id);
-      addHtml += renderDuelItem(s, true, i);
-    });
-    listEl.insertAdjacentHTML("beforeend", addHtml);
+  newFinished.forEach(s => {
+    Net._loadedDuelIds.add(s.id);
+    Net._duelSessions.push(s);
+  });
+
+  if (!r.hasMore || sessions.length < 15) {
+    Net._duelHasMore = false;
   }
 
-  if (!r.hasMore || sessions.length < 10) {
-    Net._duelHasMore = false;
-    if (moreEl) moreEl.innerHTML = '<div class="dmore-end">All duels loaded</div>';
-  } else {
-    if (moreEl) moreEl.innerHTML = '';
-  }
+  renderDuelsContent();
 }
 
 // ── challenge mode (live 1v1 duel state machine; VPS transport) ─────────────
