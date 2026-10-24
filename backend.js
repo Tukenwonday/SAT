@@ -2351,15 +2351,15 @@ function finishSession(s) {
 
     if ($("end-trophy")) $("end-trophy").textContent = win ? "🏆" : tie ? "🤝" : "💪";
     if (wonOnTime) {
-      $("end-title").textContent = "You win on time! ⚡";
+      $("end-title").textContent = "You win!";
       if ($("end-sub")) {
-        $("end-sub").textContent = `Score tied ${Net.myScore}–${Net.frScore}, but you were ${fmtMs(foeTime - myTime)} faster!`;
+        $("end-sub").textContent = `You were ${fmtMs(foeTime - myTime)} faster.`;
         $("end-sub").style.display = "block";
       }
     } else if (lostOnTime) {
-      $("end-title").textContent = esc(foe) + " wins on time! ⚡";
+      $("end-title").textContent = esc(foe) + " wins!";
       if ($("end-sub")) {
-        $("end-sub").textContent = `Score tied ${Net.myScore}–${Net.frScore}, but ${esc(foe)} was ${fmtMs(myTime - foeTime)} faster.`;
+        $("end-sub").textContent = `${esc(foe)} was ${fmtMs(myTime - foeTime)} faster.`;
         $("end-sub").style.display = "block";
       }
     } else {
@@ -2373,7 +2373,7 @@ function finishSession(s) {
           <div class="challend-score ${win ? 'is-winner' : ''}">${Net.myScore}</div>
           <div class="challend-player">You</div>
           <div class="challend-stats-box">
-            <div class="challend-stat-time">⏱️ ${fmtMs(myTime)}</div>
+            <div class="challend-stat-time">${fmtMs(myTime)}</div>
             <div class="challend-stat-pace">${fmtPace(myTime, n)} avg / Q</div>
           </div>
         </div>
@@ -2382,7 +2382,7 @@ function finishSession(s) {
           <div class="challend-score ${!win && !tie ? 'is-winner' : ''}">${Net.frScore}</div>
           <div class="challend-player">${esc(foe)}</div>
           <div class="challend-stats-box">
-            <div class="challend-stat-time">⏱️ ${fmtMs(foeTime)}</div>
+            <div class="challend-stat-time">${fmtMs(foeTime)}</div>
             <div class="challend-stat-pace">${fmtPace(foeTime, n)} avg / Q</div>
           </div>
         </div>
@@ -2412,9 +2412,15 @@ function finishSession(s) {
 
     if ($("end-trophy")) $("end-trophy").textContent = win ? (tie ? "🤝" : "🏆") : "💪";
     if (win && s1 === s2 && t1 < t2) {
-      $("end-title").textContent = "You win on time! ⚡";
+      $("end-title").textContent = "You win!";
       if ($("end-sub")) {
-        $("end-sub").textContent = `Score tied at ${s1}, but you were faster!`;
+        $("end-sub").textContent = `You were ${fmtMs(t2 - t1)} faster.`;
+        $("end-sub").style.display = "block";
+      }
+    } else if (!win && s1 === s2 && t1 < t2) {
+      $("end-title").textContent = esc(p1) + " wins!";
+      if ($("end-sub")) {
+        $("end-sub").textContent = `${esc(p1)} was ${fmtMs(t2 - t1)} faster.`;
         $("end-sub").style.display = "block";
       }
     } else {
@@ -2430,7 +2436,7 @@ function finishSession(s) {
           <div class="challend-score ${p2 === ranked[0] && tie ? 'is-winner' : ''}">${s2}</div>
           <div class="challend-player">${p2 === Net.name ? 'You' : esc(p2)}</div>
           <div class="challend-stats-box">
-            <div class="challend-stat-time">⏱️ ${fmtMs(t2)}</div>
+            <div class="challend-stat-time">${fmtMs(t2)}</div>
             <div class="challend-stat-pace">${fmtPace(t2, n)} avg</div>
           </div>
         </div>
@@ -2438,7 +2444,7 @@ function finishSession(s) {
           <div class="challend-score is-winner">${s1}</div>
           <div class="challend-player">${p1 === Net.name ? 'You' : esc(p1)}</div>
           <div class="challend-stats-box">
-            <div class="challend-stat-time">⏱️ ${fmtMs(t1)}</div>
+            <div class="challend-stat-time">${fmtMs(t1)}</div>
             <div class="challend-stat-pace">${fmtPace(t1, n)} avg</div>
           </div>
         </div>
@@ -2446,7 +2452,7 @@ function finishSession(s) {
           <div class="challend-score">${s3}</div>
           <div class="challend-player">${p3 === Net.name ? 'You' : esc(p3)}</div>
           <div class="challend-stats-box">
-            <div class="challend-stat-time">⏱️ ${fmtMs(t3)}</div>
+            <div class="challend-stat-time">${fmtMs(t3)}</div>
             <div class="challend-stat-pace">${fmtPace(t3, n)} avg</div>
           </div>
         </div>
