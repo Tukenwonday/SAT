@@ -69,9 +69,19 @@ const pairKey = (a, b) => {
   return pair[0] + "|" + pair[1];
 };
 
+// In-memory name→pin cache: avoids a users-table round-trip on EVERY request.
+// All writes go through setPinCached/invalidatePin so it never goes stale; a
+// restart repopulates lazily from Postgres.
+const pinCache = new Map();
+function setPinCached(name, pin) { pinCache.set(cleanName(name), String(pin)); }
+function invalidatePin(name) { pinCache.delete(cleanName(name)); }
 async function getPin(name) {
+  name = cleanName(name);
+  if (pinCache.has(name)) return pinCache.get(name);
   const r = await pool.query("SELECT pin FROM users WHERE name=$1", [name]);
-  return r.rowCount ? r.rows[0].pin : null;
+  const pin = r.rowCount ? r.rows[0].pin : null;
+  if (pin !== null) pinCache.set(name, pin);
+  return pin;
 }
 async function checkPin(name, pin) {
   name = cleanName(name);
@@ -119,16 +129,51 @@ async function presenceFor(viewer) {
   })).sort((a, b) => (a.name === viewer ? -1 : b.name === viewer ? 1 : a.name.localeCompare(b.name)));
 }
 // Push a fresh scoped presence:list to everyone in changedUser's circle.
-async function emitPresenceCircle(changedUser) {
+// THROTTLED: callers fire this on every answer/move/heartbeat edge, and each
+// call used to mean a fresh roster rebuild + broadcast. Now changes queue in
+// _presencePending and at most ONE flush happens per PRESENCE_THROTTLE_MS,
+// covering every change queued in between. Closed-group updates coalesce into
+// a single global broadcast; friend-scoped viewers are computed in parallel.
+const PRESENCE_THROTTLE_MS = +(process.env.PRESENCE_THROTTLE_MS || 1000);
+const _presencePending = new Set(); // changed user names since the last flush
+let _presenceTimer = null;
+let _presenceFlushing = false;
+
+function emitPresenceCircle(changedUser) {
+  const name = cleanName(changedUser);
+  if (!name) return;
+  _presencePending.add(name);
+  if (_presenceTimer || _presenceFlushing) return;
+  _presenceTimer = setTimeout(() => { _presenceTimer = null; flushPresence(); }, PRESENCE_THROTTLE_MS);
+}
+
+function schedulePresenceFlush(delayMs) {
+  if (_presenceTimer) return;
+  _presenceTimer = setTimeout(() => { _presenceTimer = null; flushPresence(); }, delayMs);
+}
+
+async function flushPresence() {
+  if (_presenceFlushing) { schedulePresenceFlush(PRESENCE_THROTTLE_MS); return; }
+  const users = [..._presencePending];
+  _presencePending.clear();
+  if (!users.length) return;
+  _presenceFlushing = true;
   try {
-    const friends = await friendNames(changedUser);
-    const audience = friends.length ? [...new Set([changedUser, ...friends])] : null;
-    if (!audience) { // closed-group mode: everyone gets the capped global list
-      io.emit("presence:list", await presenceFor(""));
-      return;
-    }
-    for (const m of audience) io.to("user:" + m).emit("presence:list", await presenceFor(m));
-  } catch (e) { console.error("emitPresenceCircle", e.message); }
+    // One friend-list query for ALL queued users (was: one query per user per emit).
+    const fr = await pool.query(
+      "SELECT user_name, friend_name FROM friends WHERE user_name = ANY($1)", [users]);
+    const fmap = {};
+    for (const row of fr.rows) (fmap[row.user_name] = fmap[row.user_name] || []).push(row.friend_name);
+    // Any friendless queued user dirties the closed-group global list — one emit covers it.
+    const globalDirty = users.some(u => !(fmap[u] || []).length);
+    const members = new Set();
+    for (const u of users) for (const m of [u, ...(fmap[u] || [])]) members.add(m);
+    if (globalDirty) io.emit("presence:list", await presenceFor("")); // capped global list for everyone
+    await Promise.all([...members].map(async (m) =>
+      io.to("user:" + m).emit("presence:list", await presenceFor(m)))); // per-viewer scope, parallel
+  } catch (e) { console.error("flushPresence", e.message); }
+  finally { _presenceFlushing = false; }
+  if (_presencePending.size) schedulePresenceFlush(50); // changes that queued mid-flush
 }
 function sessionOut(r) {
   const players = (r.players && r.players.length) ? r.players : [r.host, r.guest].filter(Boolean);
@@ -218,6 +263,7 @@ app.post("/api/identify", async (req, res) => {
     } else if (pin !== row.pin) {
       return res.status(403).json({ ok: false, error: "bad-pin" });
     }
+    setPinCached(name, generatedPin || row.pin); // generatedPin covers create/migrate branches
     // Upsert presence, preserving today's count when the day matches.
     await pool.query(
       `INSERT INTO status(name, current_index, last_seen, day_key, today_count)
@@ -404,23 +450,32 @@ app.get("/api/history", async (req, res) => {
       const f = await friendNames(me);
       names = f.length ? [...new Set([me, ...f])] : null;
     }
+    // Aggregate in the DB: GROUP BY day + user over a bounded 31-day window
+    // (browser slices to the newest 30 day-keys — same day math as before,
+    // but rows stop growing with lifetime attempts). The old code pulled
+    // EVERY attempt ever recorded and grouped client-side.
+    const dayExpr = `to_char(date_trunc('day', answered_at AT TIME ZONE 'UTC' AT TIME ZONE current_setting('TIMEZONE')), 'YYYY-MM-DD')`;
+    const cutoff = `date_trunc('day', CURRENT_TIMESTAMP) - interval '30 days'`;
     const rows = (names
       ? await pool.query(
-          "SELECT user_name, answered_at AT TIME ZONE 'UTC' AT TIME ZONE current_setting('TIMEZONE') AS local_ts, is_correct FROM attempts WHERE user_name = ANY($1)",
-          [names])
+          `SELECT ${dayExpr} AS day, user_name,
+                  COUNT(*)::int AS tot, COUNT(*) FILTER (WHERE is_correct)::int AS ok
+           FROM attempts
+           WHERE user_name = ANY($1) AND answered_at >= ${cutoff}
+           GROUP BY 1, 2`, [names])
       : await pool.query(
-          "SELECT user_name, answered_at AT TIME ZONE 'UTC' AT TIME ZONE current_setting('TIMEZONE') AS local_ts, is_correct FROM attempts")).rows;
+          `SELECT ${dayExpr} AS day, user_name,
+                  COUNT(*)::int AS tot, COUNT(*) FILTER (WHERE is_correct)::int AS ok
+           FROM attempts
+           WHERE answered_at >= ${cutoff}
+           GROUP BY 1, 2`)).rows;
     const byDay = {};
     const nameSet = me ? { [me]: 1 } : {};
     for (const a of rows) {
-      if (!a.user_name) continue;
+      if (!a.day || !a.user_name) continue;
       nameSet[a.user_name] = 1;
-      const ms = new Date(a.local_ts).getTime();
-      if (!ms) continue;
-      const day = dayKeyOf(ms);
-      byDay[day] = byDay[day] || {};
-      const cell = byDay[day][a.user_name] = byDay[day][a.user_name] || { tot: 0, ok: 0 };
-      cell.tot++; if (a.is_correct) cell.ok++;
+      byDay[a.day] = byDay[a.day] || {};
+      byDay[a.day][a.user_name] = { tot: a.tot, ok: a.ok };
     }
     const names2 = Object.keys(nameSet).sort((a, b) =>
       (a === me ? -1 : b === me ? 1 : a.localeCompare(b)));
@@ -681,6 +736,7 @@ app.post("/api/users/:name/pin", async (req, res) => {
     const np = String(req.body.newPin || "");
     if (np.length < 4 || np.length > 64) return res.status(400).json({ ok: false, error: "bad-pin" });
     await pool.query("UPDATE users SET pin=$2 WHERE name=$1", [c.name, np]);
+    setPinCached(c.name, np);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, error: "server" }); }
 });
@@ -688,6 +744,7 @@ app.post("/api/users/:name/pin", async (req, res) => {
 app.delete("/api/users/:name", async (req, res) => {
   const c = await checkPin(req.params.name, req.body.pin);
   if (!c.ok) return res.status(c.error === "bad-pin" ? 403 : 404).json({ ok: false, error: c.error });
+  invalidatePin(c.name);
   await pool.query("DELETE FROM users WHERE name=$1", [c.name]); // cascades status/attempts/friends
   // Keep finished sessions as history; cancel live ones involving this user.
   await pool.query("UPDATE sessions SET status='expired' WHERE status IN ('pending','active') AND (host=$1 OR guest=$1 OR $1=ANY(COALESCE(players, '{}')))",
@@ -983,22 +1040,22 @@ app.patch("/api/sessions/:id", async (req, res) => {
       );
       s = sessionOut(r.rows[0]);
 
-      // Bulk insert attempts into ledger for this player
+      // Bulk insert attempts into ledger for this player — ONE multi-row
+      // INSERT (the old loop did one DB round-trip per question, up to 100).
       const now = Date.now(), today = dayKeyOf(now);
       const qids = s.questionIds || [];
-      let insertCount = 0;
+      const vals = [], args = [];
       for (const qid of qids) {
         if (answers[qid]) {
-          const sel = String(answers[qid]);
-          const isCorr = !!correctMap[qid];
-          await pool.query(
-            "INSERT INTO attempts(user_name, question_id, selected, is_correct, session_id) VALUES($1,$2,$3,$4,$5)",
-            [c.name, qid, sel, isCorr, id]
-          );
-          insertCount++;
+          args.push(c.name, qid, String(answers[qid]), !!correctMap[qid], id);
+          vals.push(`($${args.length - 4},$${args.length - 3},$${args.length - 2},$${args.length - 1},$${args.length})`);
         }
       }
+      const insertCount = vals.length;
       if (insertCount > 0) {
+        await pool.query(
+          `INSERT INTO attempts(user_name, question_id, selected, is_correct, session_id) VALUES ${vals.join(", ")}`,
+          args);
         await pool.query(
           `UPDATE status SET today_count = CASE WHEN day_key=$2 THEN today_count+$4 ELSE $4 END,
            day_key=$2, last_seen=$3 WHERE name=$1`, [c.name, today, now, insertCount]);
@@ -1078,8 +1135,8 @@ io.on("connection", (socket) => {
 
   socket.on("identify", async ({ name, pin } = {}) => {
     try {
-      const r = await pool.query("SELECT pin FROM users WHERE name=$1", [cleanName(name)]);
-      if (!r.rowCount || String(pin || "") !== r.rows[0].pin) {
+      const want = await getPin(name); // cached; no users-table round-trip per reconnect
+      if (want === null || String(pin || "") !== want) {
         socket.emit("identify:reject", { error: "bad-pin" });
         return;
       }
@@ -1201,21 +1258,22 @@ io.on("connection", (socket) => {
       );
       s = sessionOut(r.rows[0]);
 
+      // Bulk insert attempts into ledger for this player — ONE multi-row
+      // INSERT (the old loop did one DB round-trip per question, up to 100).
       const now = Date.now(), today = dayKeyOf(now);
       const qids = s.questionIds || [];
-      let insertCount = 0;
+      const vals = [], args = [];
       for (const qid of qids) {
         if (answers[qid]) {
-          const sel = String(answers[qid]);
-          const isCorr = !!correctMap[qid];
-          await pool.query(
-            "INSERT INTO attempts(user_name, question_id, selected, is_correct, session_id) VALUES($1,$2,$3,$4,$5)",
-            [c.name, qid, sel, isCorr, s.id]
-          );
-          insertCount++;
+          args.push(c.name, qid, String(answers[qid]), !!correctMap[qid], s.id);
+          vals.push(`($${args.length - 4},$${args.length - 3},$${args.length - 2},$${args.length - 1},$${args.length})`);
         }
       }
+      const insertCount = vals.length;
       if (insertCount > 0) {
+        await pool.query(
+          `INSERT INTO attempts(user_name, question_id, selected, is_correct, session_id) VALUES ${vals.join(", ")}`,
+          args);
         await pool.query(
           `UPDATE status SET today_count = CASE WHEN day_key=$2 THEN today_count+$4 ELSE $4 END,
            day_key=$2, last_seen=$3 WHERE name=$1`, [c.name, today, now, insertCount]);
@@ -1264,14 +1322,22 @@ io.on("connection", (socket) => {
   });
 });
 
-setInterval(() => { sweepExpiredInvites(); sweepAbandonedSessions(Date.now()); }, 15000);
-setInterval(async () => { // refresh online/offline edges even when nobody acts
+// Refresh online/offline edges even when nobody acts. In closed-group mode
+// this is ONE global broadcast (the old per-user loop sent the same list N
+// times every interval); friends mode refreshes each scoped viewer in parallel.
+async function emitPresenceAll() {
   try {
-    const rows = (await pool.query("SELECT name FROM status WHERE last_seen > 0 LIMIT $1",
-      [MAX_PRESENCE * 4])).rows;
-    for (const r of rows) emitPresenceCircle(r.name);
-  } catch (e) { /* idle */ }
-}, ONLINE_WINDOW_MS);
+    const withFriends = (await pool.query("SELECT DISTINCT user_name FROM friends")).rows.map(r => r.user_name);
+    if (!withFriends.length) {
+      io.emit("presence:list", await presenceFor("")); // single broadcast covers every edge
+      return;
+    }
+    await Promise.all(withFriends.map(async (m) =>
+      io.to("user:" + m).emit("presence:list", await presenceFor(m))));
+  } catch (e) { console.error("emitPresenceAll", e.message); }
+}
+setInterval(() => { sweepExpiredInvites(); sweepAbandonedSessions(Date.now()); }, 15000);
+setInterval(emitPresenceAll, ONLINE_WINDOW_MS);
 
 // ── Admin APIs ──────────────────────────────────────────────────────────────
 const ADMIN_PASSWORD = () => process.env.ADMIN_PASSWORD || "admin123";
@@ -1366,6 +1432,7 @@ app.post("/api/admin/users", requireAdmin, async (req, res) => {
     const pin = String(req.body.pin || "").trim() || newPin();
     if (!name) return res.status(400).json({ ok: false, error: "bad-name" });
     await pool.query("INSERT INTO users(name, pin) VALUES($1, $2)", [name, pin]);
+    setPinCached(name, pin);
     await pool.query("INSERT INTO status(name, current_index, last_seen, day_key, today_count) VALUES($1, 0, 0, '', 0) ON CONFLICT DO NOTHING", [name]);
     res.json({ ok: true, user: { name, pin } });
   } catch (e) {
@@ -1381,6 +1448,7 @@ app.patch("/api/admin/users/:name/pin", requireAdmin, async (req, res) => {
     if (!pin) return res.status(400).json({ ok: false, error: "bad-pin" });
     const r = await pool.query("UPDATE users SET pin=$1 WHERE name=$2 RETURNING name, pin", [pin, name]);
     if (!r.rowCount) return res.status(404).json({ ok: false, error: "not-found" });
+    setPinCached(name, pin);
     res.json({ ok: true, user: r.rows[0] });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
@@ -1392,6 +1460,7 @@ app.delete("/api/admin/users/:name", requireAdmin, async (req, res) => {
     const name = cleanName(req.params.name);
     const r = await pool.query("DELETE FROM users WHERE name=$1 RETURNING name", [name]);
     if (!r.rowCount) return res.status(404).json({ ok: false, error: "not-found" });
+    invalidatePin(name);
     emitPresenceCircle(name);
     res.json({ ok: true });
   } catch (e) {
@@ -1531,6 +1600,10 @@ app.post("/api/admin/db/:table/row", requireAdmin, async (req, res) => {
     const args = keys.map(k => data[k]);
 
     const r = await pool.query(`INSERT INTO "${table}" (${cols}) VALUES (${vals}) RETURNING *`, args);
+    if (table === "users" && data.name != null) {
+      if (typeof data.pin === "string") setPinCached(data.name, data.pin);
+      else invalidatePin(data.name);
+    }
     res.json({ ok: true, row: r.rows[0] });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
@@ -1566,6 +1639,10 @@ app.patch("/api/admin/db/:table/row", requireAdmin, async (req, res) => {
     const q = `UPDATE "${table}" SET ${setClauses.join(", ")} WHERE ${whereClauses.join(" AND ")} RETURNING *`;
     const r = await pool.query(q, args);
     if (!r.rowCount) return res.status(404).json({ ok: false, error: "row-not-found" });
+    if (table === "users") { // pk may hold the old name; data may rename or re-pin
+      if (data.name != null) invalidatePin(data.name);
+      if (pk.name != null) invalidatePin(pk.name);
+    }
     res.json({ ok: true, row: r.rows[0] });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
@@ -1591,6 +1668,7 @@ app.delete("/api/admin/db/:table/row", requireAdmin, async (req, res) => {
     const q = `DELETE FROM "${table}" WHERE ${whereClauses.join(" AND ")} RETURNING *`;
     const r = await pool.query(q, args);
     if (!r.rowCount) return res.status(404).json({ ok: false, error: "row-not-found" });
+    if (table === "users" && pk.name != null) invalidatePin(pk.name);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
