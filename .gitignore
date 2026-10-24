@@ -1,0 +1,32 @@
+# ── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+progress.json
+
+# ── Node ──────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ── Secrets ───────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Editors / OS ──────────────────────────────────────────────────────────
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Perch ─────────────────────────────────────────────────────────────────
+.perch/
+
+# ── Local scratch / large source PDFs ─────────────────────────────────────
+# The questionbank export is a build input, not a deploy artifact.
+questionbank-export-*.pdf
+test-done.html

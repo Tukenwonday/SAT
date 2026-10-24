@@ -956,15 +956,49 @@ async function renderDaily(box) {
   $("day-next").onclick = () => { Net._histDay--; renderDaily(box); };
 }
 
+function getDuelPlayerTime(s, p) {
+  if (!s || !s.playerTimes || !p) return 0;
+  const pt = s.playerTimes[p];
+  if (!pt) return 0;
+  if (typeof pt === "number") return pt;
+  if (typeof pt === "object") {
+    if (pt.totalTimeMs != null) return +pt.totalTimeMs || 0;
+    if (pt.total_time_ms != null) return +pt.total_time_ms || 0;
+    if (pt.timeMs != null) return +pt.timeMs || 0;
+    if (Array.isArray(pt.qTimes)) return pt.qTimes.reduce((a, b) => a + (+b || 0), 0);
+  }
+  return 0;
+}
+
 function renderDuelItem(s, quiet, i) {
   const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
   const rowAnim = quiet ? ' style="animation:none"' : ` style="animation-delay:${Math.min((i || 0) * 30, 210)}ms"`;
   if (players.length > 3) {
-    const sorted = [...players].sort((a, b) => ((s.scores && s.scores[b]) ? s.scores[b].ok : 0) - ((s.scores && s.scores[a]) ? s.scores[a].ok : 0));
-    const topScore = (s.scores && s.scores[sorted[0]]) ? s.scores[sorted[0]].ok : 0;
+    const sorted = [...players].sort((a, b) => {
+      const sa = (s.scores && s.scores[a]) ? s.scores[a].ok : 0;
+      const sb = (s.scores && s.scores[b]) ? s.scores[b].ok : 0;
+      if (sb !== sa) return sb - sa;
+      const ta = getDuelPlayerTime(s, a);
+      const tb = getDuelPlayerTime(s, b);
+      if (ta > 0 && tb > 0 && ta !== tb) return ta - tb;
+      return 0;
+    });
+    const winner = sorted[0];
+    const topScore = (s.scores && s.scores[winner]) ? s.scores[winner].ok : 0;
+    const topTime = getDuelPlayerTime(s, winner);
+
     const cols = sorted.slice(0, 4).map(p => {
       const sc = (s.scores && s.scores[p]) ? s.scores[p].ok : 0;
-      const dim = sc < topScore ? " dim" : "";
+      const tm = getDuelPlayerTime(s, p);
+      let isDim = false;
+      if (sc < topScore) {
+        isDim = true;
+      } else if (sc === topScore) {
+        if (topTime > 0 && tm > 0 && tm !== topTime) {
+          isDim = tm > topTime;
+        }
+      }
+      const dim = isDim ? " dim" : "";
       return `<div class="quad-col" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">` +
         `<span class="quad-score${dim}">${sc}</span>` +
         `<span class="quad-name${dim}">${esc(p)}</span>` +
@@ -974,15 +1008,38 @@ function renderDuelItem(s, quiet, i) {
       `<div class="quad-grid">${cols}</div>` +
       `<div class="dsub-qs">${s.totalQuestions} questions</div></div>`;
   } else if (players.length === 3) {
-    const sorted = [...players].sort((a, b) => ((s.scores && s.scores[b]) ? s.scores[b].ok : 0) - ((s.scores && s.scores[a]) ? s.scores[a].ok : 0));
-    const topScore = (s.scores && s.scores[sorted[0]]) ? s.scores[sorted[0]].ok : 0;
+    const sorted = [...players].sort((a, b) => {
+      const sa = (s.scores && s.scores[a]) ? s.scores[a].ok : 0;
+      const sb = (s.scores && s.scores[b]) ? s.scores[b].ok : 0;
+      if (sb !== sa) return sb - sa;
+      const ta = getDuelPlayerTime(s, a);
+      const tb = getDuelPlayerTime(s, b);
+      if (ta > 0 && tb > 0 && ta !== tb) return ta - tb;
+      return 0;
+    });
+    const winner = sorted[0];
+    const topScore = (s.scores && s.scores[winner]) ? s.scores[winner].ok : 0;
+    const topTime = getDuelPlayerTime(s, winner);
+
+    const checkDim = p => {
+      const sc = (s.scores && s.scores[p]) ? s.scores[p].ok : 0;
+      if (sc < topScore) return " dim";
+      if (sc === topScore) {
+        const tm = getDuelPlayerTime(s, p);
+        if (topTime > 0 && tm > 0 && tm !== topTime) {
+          return tm > topTime ? " dim" : "";
+        }
+      }
+      return "";
+    };
+
     const p1 = sorted[0], p2 = sorted[1] || sorted[0], p3 = sorted[2] || sorted[1] || sorted[0];
     const s1 = (s.scores && s.scores[p1]) ? s.scores[p1].ok : 0;
     const s2 = (s.scores && s.scores[p2]) ? s.scores[p2].ok : 0;
     const s3 = (s.scores && s.scores[p3]) ? s.scores[p3].ok : 0;
-    const dim1 = s1 < topScore ? " dim" : "";
-    const dim2 = s2 < topScore ? " dim" : "";
-    const dim3 = s3 < topScore ? " dim" : "";
+    const dim1 = checkDim(p1);
+    const dim2 = checkDim(p2);
+    const dim3 = checkDim(p3);
 
     return `<div class="drow"${rowAnim}>` +
       `<div class="trio-grid">` +
@@ -1001,13 +1058,25 @@ function renderDuelItem(s, quiet, i) {
       `</div>` +
       `<div class="dsub-qs">${s.totalQuestions} questions</div></div>`;
   } else {
-    const p1 = s.host, p2 = s.guest;
+    const p1 = s.host || players[0], p2 = s.guest || players[1] || players[0];
     const hs = (s.scores && s.scores[p1]) || { ok: 0, tot: 0 };
     const gs = (s.scores && s.scores[p2]) || { ok: 0, tot: 0 };
     const s1 = hs.ok, s2 = gs.ok;
-    const topScore = Math.max(s1, s2);
-    const dim1 = s1 < topScore ? " dim" : "";
-    const dim2 = s2 < topScore ? " dim" : "";
+    const t1 = getDuelPlayerTime(s, p1);
+    const t2 = getDuelPlayerTime(s, p2);
+
+    let dim1 = "", dim2 = "";
+    if (s1 > s2) {
+      dim2 = " dim";
+    } else if (s2 > s1) {
+      dim1 = " dim";
+    } else {
+      // Tie-breaker: faster time wins (lower totalTimeMs)
+      if (t1 > 0 && t2 > 0 && t1 !== t2) {
+        if (t1 < t2) dim2 = " dim";
+        else dim1 = " dim";
+      }
+    }
 
     return `<div class="drow"${rowAnim}>` +
       `<div class="duo-grid">` +
