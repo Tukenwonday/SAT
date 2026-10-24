@@ -767,7 +767,7 @@ app.post("/api/sessions", async (req, res) => {
     const n = +req.body.totalQuestions || qids.length;
     const mode = req.body.mode === "rush" ? "rush" : "wait";
     if (!guests.length) return res.status(400).json({ ok: false, error: "bad-guest" });
-    if (guests.length > 2) return res.status(400).json({ ok: false, error: "too-many-guests" });
+    if (guests.length > 3) return res.status(400).json({ ok: false, error: "too-many-guests" });
     for (const g of guests) {
       if (!(await getPin(g))) return res.status(404).json({ ok: false, error: "unknown-guest", guest: g });
     }

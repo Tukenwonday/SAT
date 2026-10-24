@@ -884,6 +884,14 @@ function ensureHistCss() {
     ".trio-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;margin-top:4px;letter-spacing:-.2px;text-align:center;display:block;width:100%}" +
     ".trio-name.dim{opacity:.4}" +
     ".trio-col:hover .trio-name{text-decoration:underline}" +
+    /* 4-Player Quad Grid: scores centered directly over names */
+    ".quad-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;align-items:center;padding:0 2px;gap:6px}" +
+    ".quad-col{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-width:0;cursor:pointer}" +
+    ".quad-score{font-size:24px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-.5px;text-align:center;display:block;width:100%}" +
+    ".quad-score.dim{opacity:.4}" +
+    ".quad-name{font-size:11.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;margin-top:4px;letter-spacing:-.2px;text-align:center;display:block;width:100%}" +
+    ".quad-name.dim{opacity:.4}" +
+    ".quad-col:hover .quad-name{text-decoration:underline}" +
     /* Subtle Questions count */
     ".dsub-qs{font-size:11px;color:var(--muted);opacity:.65;margin-top:5px;font-weight:500;text-align:center;letter-spacing:.02em}" +
     /* Live Duels */
@@ -951,7 +959,21 @@ async function renderDaily(box) {
 function renderDuelItem(s, quiet, i) {
   const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
   const rowAnim = quiet ? ' style="animation:none"' : ` style="animation-delay:${Math.min((i || 0) * 30, 210)}ms"`;
-  if (players.length > 2) {
+  if (players.length > 3) {
+    const sorted = [...players].sort((a, b) => ((s.scores && s.scores[b]) ? s.scores[b].ok : 0) - ((s.scores && s.scores[a]) ? s.scores[a].ok : 0));
+    const topScore = (s.scores && s.scores[sorted[0]]) ? s.scores[sorted[0]].ok : 0;
+    const cols = sorted.slice(0, 4).map(p => {
+      const sc = (s.scores && s.scores[p]) ? s.scores[p].ok : 0;
+      const dim = sc < topScore ? " dim" : "";
+      return `<div class="quad-col" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">` +
+        `<span class="quad-score${dim}">${sc}</span>` +
+        `<span class="quad-name${dim}">${esc(p)}</span>` +
+      `</div>`;
+    }).join("");
+    return `<div class="drow"${rowAnim}>` +
+      `<div class="quad-grid">${cols}</div>` +
+      `<div class="dsub-qs">${s.totalQuestions} questions</div></div>`;
+  } else if (players.length === 3) {
     const sorted = [...players].sort((a, b) => ((s.scores && s.scores[b]) ? s.scores[b].ok : 0) - ((s.scores && s.scores[a]) ? s.scores[a].ok : 0));
     const topScore = (s.scores && s.scores[sorted[0]]) ? s.scores[sorted[0]].ok : 0;
     const p1 = sorted[0], p2 = sorted[1] || sorted[0], p3 = sorted[2] || sorted[1] || sorted[0];
@@ -1009,7 +1031,18 @@ function renderLiveDuelsHtml(live) {
   live.forEach(s => {
     const players = (s.players && s.players.length) ? s.players : [s.host, s.guest].filter(Boolean);
     const qNum = Math.min((s.currentIndex || 0) + 1, s.totalQuestions);
-    if (players.length > 2) {
+    if (players.length > 3) {
+      const cols = players.slice(0, 4).map(p => {
+        const sc = (s.scores && s.scores[p]) ? s.scores[p].ok : 0;
+        return `<div class="quad-col" onclick="event.stopPropagation();Net.openProfile('${esc(p)}')">` +
+          `<span class="quad-score dlive-score">${sc}</span>` +
+          `<span class="quad-name">${esc(p)}</span>` +
+        `</div>`;
+      }).join("");
+      h += `<div class="drow dlive-row" id="live-row-${s.id}" style="animation:none">` +
+        `<div class="quad-grid" id="live-sc-${s.id}">${cols}</div>` +
+        `<div class="dsub-qs" id="live-sub-${s.id}">Question ${qNum} of ${s.totalQuestions} · <b style="color:#e11d48">In Progress</b></div></div>`;
+    } else if (players.length === 3) {
       const p1 = players[0], p2 = players[1] || players[0], p3 = players[2] || players[1] || players[0];
       const s1 = (s.scores && s.scores[p1]) ? s.scores[p1].ok : 0;
       const s2 = (s.scores && s.scores[p2]) ? s.scores[p2].ok : 0;
@@ -1070,7 +1103,7 @@ function renderDuelsContent() {
   });
 
   if (!catLive.length && !catSessions.length) {
-    container.innerHTML = `<p class="hempty">No ${is2p ? "2-player (1v1)" : "3-player (group)"} duels yet.</p>`;
+    container.innerHTML = `<p class="hempty">No ${is2p ? "2-player (1v1)" : "3+ player (group)"} duels yet.</p>`;
     return;
   }
 
@@ -1185,7 +1218,7 @@ async function renderDuels(box) {
   box.innerHTML =
     `<div class="duels-cat-nav">` +
       `<button type="button" class="duels-cat-btn ${Net._duelsCat === "2p" ? "sel" : ""}" id="duels-cat-2p">2 Players</button>` +
-      `<button type="button" class="duels-cat-btn ${Net._duelsCat === "3p" ? "sel" : ""}" id="duels-cat-3p">3 Players</button>` +
+      `<button type="button" class="duels-cat-btn ${Net._duelsCat === "3p" ? "sel" : ""}" id="duels-cat-3p">3+ Players</button>` +
     `</div>` +
     `<div id="duels-content"></div>`;
 
@@ -1398,8 +1431,10 @@ Net.openChallenge = async function (preset) {
         send.textContent = "Select an opponent";
       } else if (selArr.length === 1) {
         send.textContent = "Send 1v1 Duel ⚔️";
-      } else {
+      } else if (selArr.length === 2) {
         send.textContent = "Send 1v1v1 Battle (3-Way) ⚔️";
+      } else {
+        send.textContent = "Send 1v1v1v1 Battle (4-Way) ⚔️";
       }
     }
   };
@@ -1411,8 +1446,8 @@ Net.openChallenge = async function (preset) {
         Net._selectedGuests.delete(n);
       }
     } else {
-      if (Net._selectedGuests.size >= 2) {
-        toast("Up to 2 opponents can be selected for 1v1v1 ⚔️");
+      if (Net._selectedGuests.size >= 3) {
+        toast("Up to 3 opponents can be selected for 1v1v1v1 ⚔️");
         return;
       }
       Net._selectedGuests.add(n);
@@ -1559,9 +1594,12 @@ async function createChallenge() {
       if (guests.length === 1) {
         toast("Challenge sent to " + guests[0] + " ⚔️");
         sayChall("Waiting for " + guests[0] + " to accept…");
-      } else {
+      } else if (guests.length === 2) {
         toast(`1v1v1 Challenge sent to ${guests.join(" & ")} ⚔️`);
         sayChall(`Waiting for ${guests.join(" & ")} to accept…`);
+      } else {
+        toast(`1v1v1v1 Challenge sent to ${guests.join(", ")} ⚔️`);
+        sayChall(`Waiting for ${guests.join(", ")} to accept…`);
       }
     }
     if (FX()) FX().sound("alert");
@@ -1950,7 +1988,8 @@ function paintBattle(s) {
       if (prev !== pill.dataset.sc && FX()) FX().sound("tada");
     }
   } else {
-    sayChall(`Q${Math.min(i + 1, n)}/${n} · 3-Way Battle`);
+    const way = activePlayers.length >= 4 ? "4-Way Battle" : "3-Way Battle";
+    sayChall(`Q${Math.min(i + 1, n)}/${n} · ${way}`);
     if (pill) {
       pill.style.display = "";
       const scoreStr = activePlayers.map(p => (p === Net.name ? "You" : p) + " " + (Net.playerScores ? (Net.playerScores[p] || 0) : 0)).join(" · ");
@@ -2510,34 +2549,76 @@ function finishSession(s) {
       if ($("end-sub")) $("end-sub").style.display = "none";
     }
 
-    $("end-grid").innerHTML = `
-      <div class="challend-podium">
-        <div class="challend-podium-col ${p2 === ranked[0] && tie ? 'winner' : ''}">
-          <div class="challend-score ${p2 === ranked[0] && tie ? 'is-winner' : ''}">${s2}</div>
-          <div class="challend-player">${p2 === Net.name ? 'You' : esc(p2)}</div>
-          <div class="challend-stats-box">
-            <div class="challend-stat-time">${fmtMs(t2)}</div>
-            <div class="challend-stat-pace">${fmtPace(t2, n)} avg</div>
+    if (ranked.length >= 4) {
+      const p4 = ranked[3] || ranked[2];
+      const s4 = Net.playerScores[p4] || 0;
+      const t4 = getPlayerTotalTime(p4);
+      $("end-grid").innerHTML = `
+        <div class="challend-podium four-way">
+          <div class="challend-podium-col ${p2 === ranked[0] && tie ? 'winner' : ''}">
+            <div class="challend-score ${p2 === ranked[0] && tie ? 'is-winner' : ''}">${s2}</div>
+            <div class="challend-player">${p2 === Net.name ? 'You' : esc(p2)}</div>
+            <div class="challend-stats-box">
+              <div class="challend-stat-time">${fmtMs(t2)}</div>
+              <div class="challend-stat-pace">${fmtPace(t2, n)} avg</div>
+            </div>
+          </div>
+          <div class="challend-podium-col winner">
+            <div class="challend-score is-winner">${s1}</div>
+            <div class="challend-player">${p1 === Net.name ? 'You' : esc(p1)}</div>
+            <div class="challend-stats-box">
+              <div class="challend-stat-time">${fmtMs(t1)}</div>
+              <div class="challend-stat-pace">${fmtPace(t1, n)} avg</div>
+            </div>
+          </div>
+          <div class="challend-podium-col">
+            <div class="challend-score">${s3}</div>
+            <div class="challend-player">${p3 === Net.name ? 'You' : esc(p3)}</div>
+            <div class="challend-stats-box">
+              <div class="challend-stat-time">${fmtMs(t3)}</div>
+              <div class="challend-stat-pace">${fmtPace(t3, n)} avg</div>
+            </div>
+          </div>
+          <div class="challend-podium-col">
+            <div class="challend-score">${s4}</div>
+            <div class="challend-player">${p4 === Net.name ? 'You' : esc(p4)}</div>
+            <div class="challend-stats-box">
+              <div class="challend-stat-time">${fmtMs(t4)}</div>
+              <div class="challend-stat-pace">${fmtPace(t4, n)} avg</div>
+            </div>
           </div>
         </div>
-        <div class="challend-podium-col winner">
-          <div class="challend-score is-winner">${s1}</div>
-          <div class="challend-player">${p1 === Net.name ? 'You' : esc(p1)}</div>
-          <div class="challend-stats-box">
-            <div class="challend-stat-time">${fmtMs(t1)}</div>
-            <div class="challend-stat-pace">${fmtPace(t1, n)} avg</div>
+      `;
+    } else {
+      $("end-grid").innerHTML = `
+        <div class="challend-podium">
+          <div class="challend-podium-col ${p2 === ranked[0] && tie ? 'winner' : ''}">
+            <div class="challend-score ${p2 === ranked[0] && tie ? 'is-winner' : ''}">${s2}</div>
+            <div class="challend-player">${p2 === Net.name ? 'You' : esc(p2)}</div>
+            <div class="challend-stats-box">
+              <div class="challend-stat-time">${fmtMs(t2)}</div>
+              <div class="challend-stat-pace">${fmtPace(t2, n)} avg</div>
+            </div>
+          </div>
+          <div class="challend-podium-col winner">
+            <div class="challend-score is-winner">${s1}</div>
+            <div class="challend-player">${p1 === Net.name ? 'You' : esc(p1)}</div>
+            <div class="challend-stats-box">
+              <div class="challend-stat-time">${fmtMs(t1)}</div>
+              <div class="challend-stat-pace">${fmtPace(t1, n)} avg</div>
+            </div>
+          </div>
+          <div class="challend-podium-col">
+            <div class="challend-score">${s3}</div>
+            <div class="challend-player">${p3 === Net.name ? 'You' : esc(p3)}</div>
+            <div class="challend-stats-box">
+              <div class="challend-stat-time">${fmtMs(t3)}</div>
+              <div class="challend-stat-pace">${fmtPace(t3, n)} avg</div>
+            </div>
           </div>
         </div>
-        <div class="challend-podium-col">
-          <div class="challend-score">${s3}</div>
-          <div class="challend-player">${p3 === Net.name ? 'You' : esc(p3)}</div>
-          <div class="challend-stats-box">
-            <div class="challend-stat-time">${fmtMs(t3)}</div>
-            <div class="challend-stat-pace">${fmtPace(t3, n)} avg</div>
-          </div>
-        </div>
-      </div>
-    `;
+      `;
+    }
 
     const endTimes = $("end-times");
     if (endTimes) endTimes.innerHTML = "";
