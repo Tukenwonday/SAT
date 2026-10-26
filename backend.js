@@ -533,65 +533,90 @@ function ensureRosterCss() {
   const rst = document.createElement("style");
   rst.id = "roster-duel-css";
   rst.textContent =
-    ".roster-row.in-duel .dot{background:#ef4444!important;box-shadow:0 0 0 2px rgba(239,68,68,.35);animation:pulsered 1.4s infinite ease-in-out}" +
-    "@keyframes pulsered{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.25);opacity:.75}}" +
-    ".roster-row .rduel-tag{font-size:10.5px;font-weight:700;color:#e11d48;background:#ffe4e6;" +
-    "border:1px solid #fecdd3;border-radius:999px;padding:1px 6px;margin-left:6px;vertical-align:middle;display:inline-block;letter-spacing:-.2px}";
+    ".user .rduel-tag{font-size:10px;font-weight:700;color:#e11d48;background:#ffe4e6;" +
+    "border:1px solid #fecdd3;border-radius:999px;padding:1px 6px;margin-left:6px;vertical-align:middle;display:inline-block;letter-spacing:-.2px}" +
+    "html[data-theme=\"dark\"] .user .rduel-tag{color:#fda4af;background:rgba(225,29,72,.2);border-color:rgba(225,29,72,.4)}";
   document.head.appendChild(rst);
 }
 
-// One compact button (online count) + dropdown roster. Pills didn't scale past a few users.
+// Presence dropdown component matching mock.html with spring-like drop animation
 function paintPresence(people, now) {
   ensureRosterCss();
   Net._people = people;
   const box = $("presence"); if (!box) return;
-  if (!$("rosterbtn") || !$("rosterpanel")) {
+  if (!$("statusTrigger") || !$("statusPanel")) {
     box.innerHTML = "";
     const btn = document.createElement("button");
-    btn.type = "button"; btn.id = "rosterbtn"; btn.className = "roster-btn";
-    btn.innerHTML = '<span class="dot"></span><span id="rostercount"></span>';
-    const panel = document.createElement("div");
-    panel.id = "rosterpanel"; panel.className = "roster-panel"; panel.style.display = "none";
-    box.appendChild(btn); box.appendChild(panel);
+    btn.type = "button"; btn.id = "statusTrigger"; btn.className = "trigger";
+    btn.innerHTML = '<span id="rostercount"></span>';
+
+    const wrapper = document.createElement("div");
+    wrapper.id = "statusPanel"; wrapper.className = "panel-wrapper";
+    wrapper.innerHTML = '<div class="panel"><div class="list" id="rosterlist"></div></div>';
+
+    box.appendChild(btn);
+    box.appendChild(wrapper);
+
     btn.addEventListener("click", ev => {
       ev.stopPropagation();
-      const p = $("rosterpanel");
-      if (p) p.style.display = p.style.display === "none" ? "" : "none";
+      wrapper.classList.toggle("active");
     });
+
     if (!Net._rosterWired) {
       Net._rosterWired = true;
       document.addEventListener("click", ev => {
-        const p = $("rosterpanel");
-        if (p && p.style.display !== "none" && !p.contains(ev.target)) p.style.display = "none";
+        const p = $("statusPanel");
+        if (p && p.classList.contains("active") && !p.contains(ev.target) && ev.target !== $("statusTrigger")) {
+          p.classList.remove("active");
+        }
       });
     }
   }
-  const btn = $("rosterbtn"), panel = $("rosterpanel");
-  const order = rosterOrder(people);
-  const onlineCount = people.filter(p => isOnlinePerson(p, now)).length;
+  const btn = $("statusTrigger"), panel = $("statusPanel");
+  const list = panel.querySelector("#rosterlist");
+
+  const onlineList = people.filter(p => isOnlinePerson(p, now));
+  const offlineList = people.filter(p => !isOnlinePerson(p, now));
+
+  // Sort online: current user first, then alphabetical
+  onlineList.sort((a, b) =>
+    (a.name === Net.name ? -1 : b.name === Net.name ? 1 : String(a.name).localeCompare(String(b.name)))
+  );
+  // Sort offline: alphabetical
+  offlineList.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+  const onlineCount = onlineList.length;
   const cnt = btn.querySelector("#rostercount");
-  if (cnt) cnt.textContent = onlineCount + " online";
-  btn.classList.toggle("alloff", !onlineCount);
-  panel.innerHTML = "";
-  const MAXR = 30;
-  order.slice(0, MAXR).forEach(p => panel.appendChild(rosterRow(p, isOnlinePerson(p, now))));
-  if (order.length > MAXR) {
-    const more = document.createElement("div");
-    more.className = "roster-more";
-    more.textContent = "+" + (order.length - MAXR) + " more";
-    panel.appendChild(more);
+  if (cnt) cnt.textContent = onlineCount + " Online";
+  btn.classList.toggle("is-offline", !onlineCount);
+
+  list.innerHTML = "";
+
+  // 1. Online Users
+  onlineList.forEach(p => list.appendChild(rosterRow(p, true)));
+
+  // 2. Divider (if both online and offline users are present)
+  if (onlineList.length > 0 && offlineList.length > 0) {
+    const divider = document.createElement("div");
+    divider.className = "divider";
+    list.appendChild(divider);
   }
+
+  // 3. Offline Users
+  offlineList.forEach(p => list.appendChild(rosterRow(p, false)));
 }
+
 function rosterRow(person, online) {
+  const isYou = person.name === Net.name;
   const inDuel = !!(person.duel && person.duel.vs);
   const row = document.createElement("div");
-  row.className = "roster-row" + (online ? " on" : "") + (inDuel ? " in-duel" : "");
+  row.className = "user" + (isYou ? " is-you" : "") + (!online ? " is-offline" : "");
   row.dataset.name = person.name;
-  row.style.cursor = "pointer";
-  row.innerHTML = '<span class="dot"></span><span class="rname"></span>' +
-    '<span class="rtoday"><b class="count-tick">0</b> today</span>';
-  const nm = row.querySelector(".rname");
-  nm.textContent = person.name + (person.name === Net.name ? " (you)" : "");
+
+  const nm = document.createElement("span");
+  nm.className = "name";
+  nm.textContent = person.name + (isYou ? " (you)" : "");
+
   if (inDuel) {
     const badge = document.createElement("span");
     badge.className = "rduel-tag";
@@ -601,24 +626,32 @@ function rosterRow(person, online) {
   } else {
     row.title = `Click to view ${person.name}'s profile`;
   }
+
+  const score = document.createElement("span");
+  score.className = "score count-tick";
+  const today = Net.todayCounts[person.name] || 0;
+  score.textContent = today;
+  score.dataset.v = today;
+
+  row.appendChild(nm);
+  row.appendChild(score);
+
   row.addEventListener("click", ev => {
     ev.stopPropagation();
-    const p = $("rosterpanel");
-    if (p) p.style.display = "none";
+    const p = $("statusPanel");
+    if (p) p.classList.remove("active");
     Net.openProfile(person.name);
   });
-  const tick = row.querySelector(".count-tick");
-  const today = Net.todayCounts[person.name] || 0;
-  tick.textContent = today;
-  tick.dataset.v = today;
+
   return row;
 }
+
 function paintPresenceOffline() {
   const box = $("presence"); if (!box) return;
   box.innerHTML = "";
   const btn = document.createElement("button");
-  btn.type = "button"; btn.id = "rosterbtn"; btn.className = "roster-btn alloff";
-  btn.innerHTML = '<span class="dot"></span><span>offline</span>';
+  btn.type = "button"; btn.id = "statusTrigger"; btn.className = "trigger is-offline";
+  btn.innerHTML = '<span>Offline</span>';
   box.appendChild(btn);
 }
 
@@ -714,7 +747,8 @@ Net.fullResync = async function (loud) {
 function bumpToday(n) {
   Net.todayCounts[Net.name] = typeof n === "number" ? n : (Net.todayCounts[Net.name] || 0) + 1;
   try {
-    const pill = document.querySelector('#rosterpanel .roster-row[data-name="' + Net.name + '"] .count-tick');
+    const pill = document.querySelector('#statusPanel .user[data-name="' + Net.name + '"] .count-tick') ||
+                 document.querySelector('#rosterpanel .roster-row[data-name="' + Net.name + '"] .count-tick');
     if (pill) {
       const old = pill.dataset.v ? +pill.dataset.v : 0;
       pill.dataset.v = Net.todayCounts[Net.name];
@@ -1695,13 +1729,18 @@ function showInvite(id, s) {
   const others = (s.players || []).filter(p => p !== Net.name && p !== s.host);
   const fromEl = $("invite-from");
   const othersEl = $("invite-others");
-  if (fromEl) fromEl.textContent = s.host || "Friend";
+  if (fromEl) {
+    fromEl.textContent = s.host || "Friend";
+    fromEl.title = s.host || "Friend";
+  }
   if (othersEl) {
     if (others.length > 0) {
       othersEl.textContent = "(+ " + others.join(", ") + ")";
+      othersEl.title = others.join(", ");
       othersEl.style.display = "inline";
     } else {
       othersEl.textContent = "";
+      othersEl.title = "";
       othersEl.style.display = "none";
     }
   }
