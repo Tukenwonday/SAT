@@ -381,6 +381,16 @@ app.post("/api/answers", async (req, res) => {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      // Prevent duplicate attempts & score inflation (e.g. repeated clicks or network retry)
+      const existing = await client.query(
+        "SELECT id FROM attempts WHERE user_name=$1 AND question_id=$2 AND session_id IS NOT DISTINCT FROM $3 LIMIT 1",
+        [c.name, String(question_id), session_id || null]);
+      if (existing.rows.length > 0) {
+        const st = (await client.query("SELECT today_count, day_key FROM status WHERE name=$1", [c.name])).rows[0];
+        await client.query("COMMIT");
+        const count = st && st.day_key === today ? st.today_count : 0;
+        return res.json({ ok: true, todayCount: count, duplicate: true });
+      }
       await client.query(
         "INSERT INTO attempts(user_name, question_id, selected, is_correct, session_id) VALUES($1,$2,$3,$4,$5)",
         [c.name, String(question_id), selected, !!is_correct, session_id || null]);

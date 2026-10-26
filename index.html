@@ -3896,6 +3896,7 @@
           if (isRush) {
             if (k === ans) cls += ' picked';
           } else {
+            cls += ' locked';
             if (k === e.correct) cls += ' correct';
             else if (k === ans) cls += ' wrongpick';
           }
@@ -3957,6 +3958,7 @@
       const e = cur();
       const el = ev.target.closest('.elim');
       if (el) {
+        if (S.answers[e.id]) return;
         const k = el.dataset.k;
         S.elim[e.id] = S.elim[e.id] || [];
         const at = S.elim[e.id].indexOf(k);
@@ -3975,6 +3977,7 @@
         Net.answerChallenge(e.id, k);
         return;
       }
+      if (S.answers[e.id]) return;
       S.answers[e.id] = k;
       S.elim[e.id] = (S.elim[e.id] || []).filter(x => x !== k);
       save(); renderQ();
