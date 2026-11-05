@@ -2663,6 +2663,46 @@
       transform: scale(.97);
     }
 
+    .chall-select {
+      flex: 1;
+      padding: 12px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: var(--sans);
+      color: var(--ink);
+      background: #f2f3f8;
+      border: 1.5px solid transparent;
+      border-radius: 14px;
+      outline: none;
+      cursor: pointer;
+      transition: background .2s, border-color .2s;
+    }
+
+    .chall-select:focus {
+      background: #fff;
+      border-color: #3b82f6;
+    }
+
+    html[data-theme="dark"] #ov-challenge .chall-pick {
+      background: #191b2b;
+    }
+
+    html[data-theme="dark"] #ov-challenge .chall-pick button.sel {
+      background: #252839;
+      color: #fff;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, .25);
+    }
+
+    html[data-theme="dark"] .chall-select {
+      background: #191b2b;
+      color: var(--ink);
+    }
+
+    html[data-theme="dark"] .chall-select:focus {
+      background: #252839;
+      border-color: #60a5fa;
+    }
+
     #ov-challenge .mrow {
       align-items: center;
       margin-top: 26px;
@@ -3568,6 +3608,26 @@
       <div class="chall-pick" id="chall-mode-pick">
         <button type="button" data-mode="wait" class="sel">WAIT</button>
         <button type="button" data-mode="rush">RUSH</button>
+      </div>
+      <div class="fsec">Category</div>
+      <div class="chall-pick" id="chall-pool-pick">
+        <button type="button" data-pool="all" class="sel">All</button>
+        <button type="button" data-pool="custom">Filter</button>
+      </div>
+      <div id="chall-filter-wrap" style="display:none;margin-top:8px;gap:8px;">
+        <select id="chall-filter-dom" class="chall-select">
+          <option value="">All Categories</option>
+          <option value="Standard English Conventions">Grammar</option>
+          <option value="Information and Ideas">Information and Ideas</option>
+          <option value="Craft and Structure">Craft and Structure</option>
+          <option value="Expression of Ideas">Expression of Ideas</option>
+        </select>
+        <select id="chall-filter-dif" class="chall-select">
+          <option value="">All Difficulties</option>
+          <option value="Hard">Hard</option>
+          <option value="Medium">Medium</option>
+          <option value="Easy">Easy</option>
+        </select>
       </div>
       <div class="fsec">Questions</div>
       <div class="chall-pick" id="chall-pick">

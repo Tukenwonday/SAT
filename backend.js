@@ -282,7 +282,7 @@ function connectSocket() {
   so.on("presence:list", people => onPresence(people || []));
   so.on("invite:new", s => showInvite(s.id, s));
   so.on("invite:expired", ({ id } = {}) => {
-    if (pendingInvite && pendingInvite.id === id) { hideInvite(); toast("Challenge expired ⏳"); }
+    if (pendingInvite && pendingInvite.id === id) { hideInvite(); toast("Challenge expired."); }
     if (Net.session && Net.session.id === id) clearChallengeState();
   });
   so.on("invite:declined", ({ id, by } = {}) => {
@@ -713,7 +713,7 @@ function syncPinBox() {
   if (ni && key) key.style.display = ni.style.display;
 }
 async function changePinFlow() {
-  if (!Net.name) { toast("Save your name first 👇"); return; }
+  if (!Net.name) { toast("Save your name first."); return; }
   const cur = window.prompt(`Current PIN for "${Net.name}":`, getPin(Net.name) || "");
   if (cur === null) return;
   const np = window.prompt("New PIN (min 4 characters):", "");
@@ -784,7 +784,7 @@ Net.recordAnswer = async function (qid, letter, sessionId) {
 Net.clearAnswer = async function (qid) {
   qid = String(qid || "");
   if (!qid) return;
-  if (Net.inChallenge()) { toast("Finish the duel first — duel answers are match records ⚔️"); return; }
+  if (Net.inChallenge()) { toast("Finish the duel first — duel answers are match records."); return; }
   if (App() && App().S) { delete App().S.answers[qid]; if (App().persist) App().persist(); }
   solvedCacheDel(Net.name, qid);
   if (App() && App().renderQ) App().renderQ();
@@ -1430,6 +1430,18 @@ function wireChallengeUI() {
       if (FX()) FX().sound("tick");
     });
   }
+  const poolPick = $("chall-pool-pick");
+  const filterWrap = $("chall-filter-wrap");
+  if (poolPick && !poolPick.dataset.wired) {
+    poolPick.dataset.wired = "1";
+    poolPick.addEventListener("click", ev => {
+      const b = ev.target.closest("button[data-pool]"); if (!b) return;
+      Net.challPool = b.dataset.pool || "all";
+      poolPick.querySelectorAll("button").forEach(x => x.classList.toggle("sel", x === b));
+      if (filterWrap) filterWrap.style.display = Net.challPool === "custom" ? "flex" : "none";
+      if (FX()) FX().sound("tick");
+    });
+  }
   const reb = $("rush-endbtn");
   if (reb) reb.onclick = () => Net.submitRushTest && Net.submitRushTest();
   const nreb = $("nav-end-rush");
@@ -1520,6 +1532,27 @@ Net.openChallenge = async function (preset) {
   const send = $("challsend");
   Net._selectedGuests = new Set();
 
+  Net.challPool = "all";
+  const poolPick = $("chall-pool-pick");
+  const filterWrap = $("chall-filter-wrap");
+  if (poolPick) {
+    poolPick.querySelectorAll("button").forEach(b => {
+      b.classList.toggle("sel", b.dataset.pool === "all");
+    });
+  }
+  if (filterWrap) filterWrap.style.display = "none";
+  try {
+    const S = App().S;
+    const domSel = $("chall-filter-dom");
+    const difSel = $("chall-filter-dif");
+    if (domSel && S && Array.isArray(S.fDom) && S.fDom.length) {
+      domSel.value = S.fDom[0] || "";
+    }
+    if (difSel && S && Array.isArray(S.fDif) && S.fDif.length) {
+      difSel.value = S.fDif[0] || "";
+    }
+  } catch (e) {}
+
   const updateSelectionUI = () => {
     const selArr = Array.from(Net._selectedGuests);
     if (hid) hid.value = selArr[0] || "";
@@ -1533,11 +1566,11 @@ Net.openChallenge = async function (preset) {
       if (selArr.length === 0) {
         send.textContent = "Select an opponent";
       } else if (selArr.length === 1) {
-        send.textContent = "Send 1v1 Duel ⚔️";
+        send.textContent = "Send 1v1 Duel";
       } else if (selArr.length === 2) {
-        send.textContent = "Send 1v1v1 Battle (3-Way) ⚔️";
+        send.textContent = "Send 3-Way Battle";
       } else {
-        send.textContent = "Send 1v1v1v1 Battle (4-Way) ⚔️";
+        send.textContent = "Send 4-Way Battle";
       }
     }
   };
@@ -1550,7 +1583,7 @@ Net.openChallenge = async function (preset) {
       }
     } else {
       if (Net._selectedGuests.size >= 3) {
-        toast("Up to 3 opponents can be selected for 1v1v1v1 ⚔️");
+        toast("Up to 3 opponents can be selected for 1v1v1v1.");
         return;
       }
       Net._selectedGuests.add(n);
@@ -1608,47 +1641,111 @@ Net.openChallenge = async function (preset) {
 
 async function pickQuestions(n, guests) {
   const gList = (Array.isArray(guests) ? guests : [guests]).filter(Boolean);
-  let pool;
-  try {
-    const F = App().F, DB = App().DB;
-    const filtered = Array.isArray(F) && F.length && F.length !== DB.length;
-    pool = (filtered ? F.slice() : DB.map((_, i) => i));
-  } catch (e) { pool = Net.db.map((_, i) => i); }
-  try {
-    const playersToCheck = [Net.name, ...gList].filter(Boolean);
-    if (playersToCheck.length > 1) {
-      const solvedSets = await Promise.all(playersToCheck.map(p => solvedSetFor(p)));
-      const hasAnyHistory = solvedSets.some(s => s && s.size > 0);
-      if (hasAnyHistory) {
-        // Questions that NONE of the players have answered previously
-        const fresh = pool.filter(i => {
-          const qid = (Net.db[i] || {}).id;
-          return !solvedSets.some(s => s.has(qid));
-        });
-        if (fresh.length >= n) {
-          pool = fresh;
-        } else if (fresh.length > 0) {
-          const freshSet = new Set(fresh);
-          const rest = pool.filter(i => !freshSet.has(i));
-          for (let i = rest.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [rest[i], rest[j]] = [rest[j], rest[i]];
-          }
-          pool = fresh.concat(rest);
-          toast(`Only ${fresh.length} fresh questions for all players — mixed in ${n - fresh.length} repeats 🔁`);
-        }
-      }
+  const playersToCheck = [Net.name, ...gList].filter(Boolean);
+  const db = Net.db || [];
+
+  const useFilter = Net.challPool === "custom";
+  const domSel = $("chall-filter-dom");
+  const difSel = $("chall-filter-dif");
+  const targetDom = useFilter && domSel ? domSel.value : "";
+  const targetDif = useFilter && difSel ? difSel.value : "";
+
+  const shuffle = (arr) => {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
     }
+    return arr;
+  };
+
+  let solvedSets = [];
+  try {
+    solvedSets = await Promise.all(playersToCheck.map(p => solvedSetFor(p)));
   } catch (e) {}
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
+
+  const isSolved = (qid) => solvedSets.some(s => s && s.has(qid));
+  const allIndices = db.map((_, i) => i);
+
+  if (!useFilter && !targetDom && !targetDif) {
+    const fresh = allIndices.filter(i => db[i] && !isSolved(db[i].id));
+    shuffle(fresh);
+    if (fresh.length >= n) {
+      return fresh.slice(0, n).map(i => db[i].id);
+    }
+    const picked = fresh.slice();
+    const remaining = allIndices.filter(i => !picked.includes(i));
+    shuffle(remaining);
+    picked.push(...remaining.slice(0, n - picked.length));
+    return picked.map(i => db[i].id);
   }
-  return pool.slice(0, n).map(i => Net.db[i].id);
+
+  // Tier 1: Fresh questions matching both targetDom & targetDif
+  const tier1 = allIndices.filter(i => {
+    const q = db[i];
+    if (!q) return false;
+    if (targetDom && q.domain !== targetDom) return false;
+    if (targetDif && q.difficulty !== targetDif) return false;
+    return !isSolved(q.id);
+  });
+  shuffle(tier1);
+  const picked = tier1.slice(0, n);
+
+  // Tier 2: Expand difficulty within targetDom if needed
+  if (picked.length < n && targetDif) {
+    const tier2 = allIndices.filter(i => {
+      const q = db[i];
+      if (!q || picked.includes(i)) return false;
+      if (targetDom && q.domain !== targetDom) return false;
+      return !isSolved(q.id);
+    });
+    shuffle(tier2);
+    const needed = n - picked.length;
+    if (tier2.length > 0) {
+      picked.push(...tier2.slice(0, needed));
+      toast("Category completed. Expanded difficulties for fresh questions.");
+    }
+  }
+
+  // Tier 3: Expand to all categories if still needed
+  if (picked.length < n) {
+    const tier3 = allIndices.filter(i => {
+      const q = db[i];
+      if (!q || picked.includes(i)) return false;
+      return !isSolved(q.id);
+    });
+    shuffle(tier3);
+    const needed = n - picked.length;
+    if (tier3.length > 0) {
+      picked.push(...tier3.slice(0, needed));
+      toast("Category completed. Expanded to all categories for fresh questions.");
+    }
+  }
+
+  // Tier 4: Only if the entire bank has no fresh questions left
+  if (picked.length < n) {
+    const filterAll = allIndices.filter(i => {
+      const q = db[i];
+      if (!q || picked.includes(i)) return false;
+      if (targetDom && q.domain !== targetDom) return false;
+      if (targetDif && q.difficulty !== targetDif) return false;
+      return true;
+    });
+    shuffle(filterAll);
+    const needed = n - picked.length;
+    picked.push(...filterAll.slice(0, needed));
+  }
+
+  if (picked.length < n) {
+    const rest = allIndices.filter(i => !picked.includes(i));
+    shuffle(rest);
+    picked.push(...rest.slice(0, n - picked.length));
+  }
+
+  return picked.slice(0, n).map(i => db[i].id);
 }
 
 async function createChallenge() {
-  if (!Net.name) { toast("Save your name first 👇"); return; }
+  if (!Net.name) { toast("Save your name first."); return; }
   const guests = Net._selectedGuests && Net._selectedGuests.size
     ? Array.from(Net._selectedGuests)
     : [otherName()].filter(Boolean);
@@ -1661,18 +1758,18 @@ async function createChallenge() {
       const r = await api("/api/users/online?user=" + encodeURIComponent(Net.name) +
         "&pin=" + encodeURIComponent(getPin(Net.name)) + "&scope=friends");
       if (!r || !r.ok || !(r.online || []).includes(g)) {
-        toast(`${g} is offline — you can only challenge online players ⚪`);
+        toast(`${g} is offline.`);
         return;
       }
     }
   }
   const n = Net.challN || 10;
-  toast("Picking fresh questions… ⚔️");
+  toast("Picking fresh questions…");
   if (Net._creating) return;
   Net._creating = true;
   try {
     const qids = await pickQuestions(n, guests);
-    if (qids.length < n) { toast("Not enough questions in the current filter."); return; }
+    if (qids.length < n) { toast("Not enough questions available."); return; }
     const r = await api("/api/sessions", {
       method: "POST",
       body: {
@@ -1692,16 +1789,16 @@ async function createChallenge() {
     }
     $("ov-challenge").classList.remove("open");
     if (r.merged) {
-      toast("Joined " + guests[0] + "'s challenge ⚔️");
+      toast("Joined " + guests[0] + "'s challenge");
     } else {
       if (guests.length === 1) {
-        toast("Challenge sent to " + guests[0] + " ⚔️");
+        toast("Challenge sent to " + guests[0]);
         sayChall("Waiting for " + guests[0] + " to accept…");
       } else if (guests.length === 2) {
-        toast(`1v1v1 Challenge sent to ${guests.join(" & ")} ⚔️`);
+        toast(`Challenge sent to ${guests.join(" & ")}`);
         sayChall(`Waiting for ${guests.join(" & ")} to accept…`);
       } else {
-        toast(`1v1v1v1 Challenge sent to ${guests.join(", ")} ⚔️`);
+        toast(`Challenge sent to ${guests.join(", ")}`);
         sayChall(`Waiting for ${guests.join(", ")} to accept…`);
       }
     }
@@ -1713,7 +1810,7 @@ async function createChallenge() {
         await refreshSession(r.session.id);
         const cur = Net.session;
         if (cur && cur.id === r.session.id && cur.status === "pending") {
-          toast("Challenge timed out — opponents didn't respond ⏳");
+          toast("Challenge timed out — opponents didn't respond.");
           clearChallengeState();
         }
       }
@@ -1783,7 +1880,7 @@ async function acceptChallenge() {
   if (!r || !r.ok) {
     if (r && r.error === "bad-state") { refreshSession(id); return; } // already accepted elsewhere
     if (r && r.error === "already-active") {
-      toast("You're already in another duel — finish it first ⚔️");
+      toast("You're already in another duel — finish it first.");
       refreshSession(id);
       return;
     }
@@ -1869,7 +1966,7 @@ function onSession(s) {
   if (s.status === "declined" || s.status === "expired") {
     if (was === "active" || was === "pending" || !was) {
       if (pendingInvite && pendingInvite.id === s.id) hideInvite();
-      else toast(s.status === "expired" ? "Challenge expired ⏳" : "Challenge declined.");
+      else toast(s.status === "expired" ? "Challenge expired." : "Challenge declined.");
     }
     clearChallengeState();
     return;
@@ -1877,7 +1974,7 @@ function onSession(s) {
   if (s.status === "forfeited") {
     const foes = (s.players || [s.host, s.guest]).filter(p => p !== Net.name);
     if (was === "active" || was === "pending") {
-      toast(s.forfeitedBy ? `${s.forfeitedBy} forfeited — match over 🏳` : "Match abandoned — opponent gone 🏳");
+      toast(s.forfeitedBy ? `${s.forfeitedBy} forfeited — match over.` : "Match abandoned — opponent left.");
       showForfeitEnd(s, foes.join(", "));
     }
     clearChallengeState();
@@ -1892,9 +1989,9 @@ function onSession(s) {
         const act = (s.players || [s.host, s.guest]).filter(u => !s.forfeitedPlayers.includes(u));
         if (act.length === 2) {
           const otherFoe = act.find(u => u !== Net.name);
-          toast(`${p} left! Switched to 1v1 vs ${otherFoe} ⚔️`);
+          toast(`${p} left. Switched to 1v1 vs ${otherFoe}.`);
         } else {
-          toast(`${p} forfeited! The battle continues ⚔️`);
+          toast(`${p} forfeited. The battle continues.`);
         }
       }
     });
@@ -2340,7 +2437,7 @@ Net.answerChallenge = async function (qid, letter) {
   if (!s || s.status !== "active") return;
   const i = s.currentIndex || 0;
   if (qid !== (s.questionIds || [])[i]) {
-    toast("Reviewing — hop back to the live question to answer ⚔️");
+    toast("Reviewing — hop back to the live question to answer.");
     return;
   }
   if (Net._myPick && Net._myPick.i === i) return;
@@ -3019,7 +3116,7 @@ async function doSendChat() {
   const text = ((inp && inp.value) || "").trim().slice(0, 200);
   if (!text) return;
   const s = Net.session;
-  if (!s || s.status !== "active" || !Net.inChallenge()) { toast("Chat lives inside duels only ⚔️"); return; }
+  if (!s || s.status !== "active" || !Net.inChallenge()) { toast("Chat lives inside duels only."); return; }
   if (inp) inp.value = "";
   const payload = { sessionId: s.id, actor: Net.name, pin: getPin(Net.name), text };
   let done = false, slow = false;
