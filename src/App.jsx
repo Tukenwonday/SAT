@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import SATExamView from './components/SATExamView';
 import HomeworkManager from './components/homework/HomeworkManager';
 import TeacherPortal from './components/teacher/TeacherPortal';
+import MaintenanceScreen from './components/MaintenanceScreen';
+import { MAINTENANCE_MODE } from './siteConfig';
 import { initExamEngine } from './examEngine';
 import './index.css';
 
@@ -19,6 +21,12 @@ function isTeacherRoute() {
 }
 
 export default function App() {
+  // Checked before anything loads so the exam engine and backend never start.
+  if (MAINTENANCE_MODE) return <MaintenanceScreen />;
+  return <MainApp />;
+}
+
+function MainApp() {
   const [showTeacher, setShowTeacher] = useState(() => isTeacherRoute());
 
   useEffect(() => {
