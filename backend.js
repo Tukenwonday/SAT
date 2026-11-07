@@ -13,6 +13,9 @@ function baseUrl() {
     if (q) return String(q).replace(/\/+$/, "");
     const ls = localStorage.getItem("satbank_backend_url");
     if (ls) return String(ls).replace(/\/+$/, "");
+    if (typeof location !== "undefined" && (location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+      return "";
+    }
   } catch (e) {}
   return String(BC.url || "").replace(/\/+$/, "");
 }

@@ -69,6 +69,45 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS sessions_guest_status_idx ON sessions(guest, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS sessions_host_status_idx ON sessions(host, status, created_at DESC);
 
+-- Teacher & Student Homework System
+CREATE TABLE IF NOT EXISTS classes (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       TEXT NOT NULL,
+  join_code  TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS class_members (
+  class_id   UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  user_name  TEXT NOT NULL REFERENCES users(name) ON DELETE CASCADE,
+  joined_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (class_id, user_name)
+);
+CREATE INDEX IF NOT EXISTS class_members_user_idx ON class_members(user_name);
+
+CREATE TABLE IF NOT EXISTS assignments (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  class_id     UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  title        TEXT NOT NULL,
+  question_ids TEXT[] NOT NULL DEFAULT '{}',
+  due_at       TIMESTAMPTZ NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS assignments_class_idx ON assignments(class_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS homework_submissions (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  assignment_id  UUID NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+  user_name      TEXT NOT NULL REFERENCES users(name) ON DELETE CASCADE,
+  attempt_number INT NOT NULL DEFAULT 1,
+  answers        JSONB NOT NULL DEFAULT '{}',
+  score          INT NOT NULL DEFAULT 0,
+  total          INT NOT NULL DEFAULT 0,
+  submitted_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  is_late        BOOLEAN NOT NULL DEFAULT false
+);
+CREATE INDEX IF NOT EXISTS hw_subs_assign_user_idx ON homework_submissions(assignment_id, user_name, attempt_number DESC);
+
 -- Tables are created by the postgres superuser; the app role needs full access
 -- (and to any tables created later, e.g. by future migrations).
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO waleed;

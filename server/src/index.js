@@ -37,6 +37,49 @@ async function initDb() {
       ALTER TABLE sessions ADD COLUMN IF NOT EXISTS player_times JSONB NOT NULL DEFAULT '{}';
       UPDATE sessions SET players = ARRAY[host, guest] WHERE players IS NULL AND guest IS NOT NULL;
       UPDATE sessions SET accepted_by = ARRAY[host, guest] WHERE accepted_by IS NULL AND guest IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS classes (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name        TEXT NOT NULL,
+        join_code   TEXT UNIQUE NOT NULL,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS classes_join_code_idx ON classes (join_code);
+
+      CREATE TABLE IF NOT EXISTS class_members (
+        class_id    UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+        user_name   TEXT NOT NULL REFERENCES users(name) ON DELETE CASCADE,
+        joined_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (class_id, user_name)
+      );
+      CREATE INDEX IF NOT EXISTS class_members_user_idx ON class_members (user_name);
+
+      CREATE TABLE IF NOT EXISTS assignments (
+        id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        class_id          UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+        title             TEXT NOT NULL,
+        description       TEXT NOT NULL DEFAULT '',
+        question_ids      TEXT[] NOT NULL,
+        domain_filter     TEXT,
+        difficulty_filter TEXT,
+        due_at            TIMESTAMPTZ,
+        created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS assignments_class_idx ON assignments (class_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS homework_submissions (
+        id             BIGSERIAL PRIMARY KEY,
+        assignment_id  UUID NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+        user_name      TEXT NOT NULL REFERENCES users(name) ON DELETE CASCADE,
+        attempt_number INT NOT NULL DEFAULT 1,
+        score          INT NOT NULL DEFAULT 0,
+        total          INT NOT NULL DEFAULT 0,
+        answers        JSONB NOT NULL DEFAULT '{}',
+        is_late        BOOLEAN NOT NULL DEFAULT false,
+        submitted_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS hw_submissions_assignment_user_idx ON homework_submissions (assignment_id, user_name, submitted_at DESC);
+      CREATE INDEX IF NOT EXISTS hw_submissions_user_idx ON homework_submissions (user_name, submitted_at DESC);
     `);
   } catch (e) {
     console.error("initDb migration error:", e.message);
@@ -1523,7 +1566,7 @@ app.delete("/api/admin/sessions/:id", requireAdmin, async (req, res) => {
 });
 
 // Database direct inspection & editing
-const ALLOWED_TABLES = ["users", "status", "attempts", "sessions", "friends"];
+const ALLOWED_TABLES = ["users", "status", "attempts", "sessions", "friends", "classes", "class_members", "assignments", "homework_submissions"];
 
 app.get("/api/admin/db/tables", requireAdmin, async (req, res) => {
   try {
@@ -1688,9 +1731,11 @@ app.delete("/api/admin/db/:table/row", requireAdmin, async (req, res) => {
 function getSatDbPath() {
   const candidates = [
     path.resolve(__dirname, "../../sat_db.json"),
+    path.resolve(__dirname, "../../public/sat_db.json"),
     path.resolve(__dirname, "../sat_db.json"),
     path.resolve(__dirname, "sat_db.json"),
     path.resolve(process.cwd(), "sat_db.json"),
+    path.resolve(process.cwd(), "public/sat_db.json"),
   ];
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;
@@ -1698,12 +1743,28 @@ function getSatDbPath() {
   return null;
 }
 
+let cachedSatDb = null;
+let cachedSatDbMtime = 0;
+function loadSatDb() {
+  const dbPath = getSatDbPath();
+  if (!dbPath) return [];
+  try {
+    const stat = fs.statSync(dbPath);
+    if (!cachedSatDb || stat.mtimeMs !== cachedSatDbMtime) {
+      cachedSatDb = JSON.parse(fs.readFileSync(dbPath, "utf8"));
+      cachedSatDbMtime = stat.mtimeMs;
+    }
+    return cachedSatDb;
+  } catch (e) {
+    console.error("loadSatDb error:", e.message);
+    return cachedSatDb || [];
+  }
+}
+
 app.get("/api/admin/questions", requireAdmin, async (req, res) => {
   try {
-    const dbPath = getSatDbPath();
-    if (!dbPath) return res.status(404).json({ ok: false, error: "sat_db.json not found on server" });
-    const raw = fs.readFileSync(dbPath, "utf8");
-    const all = JSON.parse(raw);
+    const all = loadSatDb();
+    if (!all.length) return res.status(404).json({ ok: false, error: "sat_db.json not found on server" });
 
     const q = String(req.query.q || "").toLowerCase().trim();
     const domain = String(req.query.domain || "").trim();
@@ -1760,7 +1821,660 @@ app.patch("/api/admin/questions/:id", requireAdmin, async (req, res) => {
     all[idx] = updated;
 
     fs.writeFileSync(dbPath, JSON.stringify(all, null, 1), "utf8");
+    cachedSatDb = null;
     res.json({ ok: true, question: updated });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── Teacher & Student Homework APIs ─────────────────────────────────────────
+const TEACHER_PASSWORD = () => process.env.TEACHER_PASSWORD || process.env.ADMIN_PASSWORD || "teacher123";
+
+function requireTeacher(req, res, next) {
+  const key =
+    req.headers["x-teacher-key"] ||
+    req.headers["x-admin-key"] ||
+    req.query.teacher_key ||
+    req.query.admin_key ||
+    req.headers["authorization"]?.replace(/^Bearer\s+/i, "");
+  if (!key || (key !== TEACHER_PASSWORD() && key !== ADMIN_PASSWORD())) {
+    return res.status(401).json({ ok: false, error: "unauthorized" });
+  }
+  next();
+}
+
+function generateJoinCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars[crypto.randomInt(0, chars.length)];
+  }
+  return code;
+}
+
+app.post("/api/teacher/auth", (req, res) => {
+  const pwd = String(req.body.password || "").trim();
+  if (pwd && (pwd === TEACHER_PASSWORD() || pwd === ADMIN_PASSWORD())) {
+    return res.json({ ok: true });
+  }
+  return res.status(401).json({ ok: false, error: "invalid-password" });
+});
+
+// Search/browse question bank for teacher assignment builder
+app.get("/api/teacher/questions", requireTeacher, async (req, res) => {
+  try {
+    const all = loadSatDb();
+    const q = String(req.query.q || "").toLowerCase().trim();
+    const domain = String(req.query.domain || "").trim();
+    const difficulty = String(req.query.difficulty || "").trim();
+    const skill = String(req.query.skill || "").trim();
+    const page = Math.max(1, +(req.query.page || 1));
+    const limit = Math.min(100, Math.max(1, +(req.query.limit || 25)));
+
+    let filtered = all;
+    if (domain && domain !== "all" && domain !== "All") {
+      filtered = filtered.filter(item => item.domain === domain);
+    }
+    if (difficulty && difficulty !== "all" && difficulty !== "All") {
+      filtered = filtered.filter(item => item.difficulty === difficulty);
+    }
+    if (skill && skill !== "all" && skill !== "All") {
+      filtered = filtered.filter(item => item.skill === skill);
+    }
+    if (q) {
+      filtered = filtered.filter(item =>
+        (item.id && item.id.toLowerCase().includes(q)) ||
+        (item.question && item.question.toLowerCase().includes(q)) ||
+        (item.skill && item.skill.toLowerCase().includes(q))
+      );
+    }
+
+    const total = filtered.length;
+    const startIndex = (page - 1) * limit;
+    const slice = filtered.slice(startIndex, startIndex + limit);
+
+    res.json({
+      ok: true,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      questions: slice,
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// List classes with roster count and assignment count
+app.get("/api/teacher/classes", requireTeacher, async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT c.*,
+        (SELECT COUNT(*)::int FROM class_members cm WHERE cm.class_id = c.id) AS student_count,
+        (SELECT COUNT(*)::int FROM assignments a WHERE a.class_id = c.id) AS assignment_count
+      FROM classes c
+      ORDER BY c.created_at DESC
+    `);
+    res.json({ ok: true, classes: r.rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Create a new class with unique 6-character join code
+app.post("/api/teacher/classes", requireTeacher, async (req, res) => {
+  try {
+    const name = String(req.body.name || "").trim().slice(0, 80);
+    if (!name) return res.status(400).json({ ok: false, error: "class-name-required" });
+
+    let code = "";
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const candidate = generateJoinCode();
+      const exists = await pool.query("SELECT 1 FROM classes WHERE join_code = $1", [candidate]);
+      if (!exists.rowCount) {
+        code = candidate;
+        break;
+      }
+    }
+    if (!code) return res.status(500).json({ ok: false, error: "could-not-generate-code" });
+
+    const r = await pool.query(
+      "INSERT INTO classes (name, join_code) VALUES ($1, $2) RETURNING *",
+      [name, code]
+    );
+    res.json({ ok: true, class: { ...r.rows[0], student_count: 0, assignment_count: 0 } });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Delete a class
+app.delete("/api/teacher/classes/:id", requireTeacher, async (req, res) => {
+  try {
+    const r = await pool.query("DELETE FROM classes WHERE id = $1 RETURNING id", [req.params.id]);
+    if (!r.rowCount) return res.status(404).json({ ok: false, error: "not-found" });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Get students enrolled in a class + their homework stats in that class
+app.get("/api/teacher/classes/:id/students", requireTeacher, async (req, res) => {
+  try {
+    const classId = req.params.id;
+    const [membersRes, assignCountRes, subRes] = await Promise.all([
+      pool.query(`
+        SELECT cm.user_name, cm.joined_at, s.last_seen, s.today_count, s.day_key
+        FROM class_members cm
+        LEFT JOIN status s ON s.name = cm.user_name
+        WHERE cm.class_id = $1
+        ORDER BY cm.user_name ASC
+      `, [classId]),
+      pool.query("SELECT COUNT(*)::int AS total FROM assignments WHERE class_id = $1", [classId]),
+      pool.query(`
+        SELECT hs.user_name, hs.assignment_id,
+               MAX(hs.score)::int AS best_score,
+               MAX(hs.total)::int AS total,
+               COUNT(*)::int AS attempts_count,
+               MAX(hs.submitted_at) AS last_submitted_at
+        FROM homework_submissions hs
+        JOIN assignments a ON a.id = hs.assignment_id
+        WHERE a.class_id = $1
+        GROUP BY hs.user_name, hs.assignment_id
+      `, [classId]),
+    ]);
+
+    const totalAssignments = assignCountRes.rows[0]?.total || 0;
+    const byStudent = {};
+    for (const row of subRes.rows) {
+      if (!byStudent[row.user_name]) {
+        byStudent[row.user_name] = { completedCount: 0, totalEarned: 0, totalPossible: 0, totalAttempts: 0, lastSubmittedAt: null };
+      }
+      const st = byStudent[row.user_name];
+      st.completedCount += 1;
+      st.totalEarned += row.best_score;
+      st.totalPossible += row.total;
+      st.totalAttempts += row.attempts_count;
+      if (!st.lastSubmittedAt || new Date(row.last_submitted_at) > new Date(st.lastSubmittedAt)) {
+        st.lastSubmittedAt = row.last_submitted_at;
+      }
+    }
+
+    const now = Date.now();
+    const students = membersRes.rows.map(m => {
+      const st = byStudent[m.user_name] || { completedCount: 0, totalEarned: 0, totalPossible: 0, totalAttempts: 0, lastSubmittedAt: null };
+      const avgPct = st.totalPossible > 0 ? Math.round((st.totalEarned / st.totalPossible) * 100) : null;
+      return {
+        name: m.user_name,
+        joinedAt: m.joined_at,
+        online: isOnline(m.last_seen, now),
+        lastSeen: m.last_seen ? +m.last_seen : null,
+        completedAssignments: st.completedCount,
+        totalAssignments,
+        avgScorePct: avgPct,
+        totalAttempts: st.totalAttempts,
+        lastSubmittedAt: st.lastSubmittedAt,
+      };
+    });
+
+    res.json({ ok: true, students, totalAssignments });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Remove student from a class
+app.delete("/api/teacher/classes/:id/students/:name", requireTeacher, async (req, res) => {
+  try {
+    await pool.query(
+      "DELETE FROM class_members WHERE class_id = $1 AND user_name = $2",
+      [req.params.id, req.params.name]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// List assignments for a class (or 'all' across all classes)
+app.get("/api/teacher/classes/:id/assignments", requireTeacher, async (req, res) => {
+  try {
+    const classId = req.params.id;
+    const isAll = classId === "all";
+    const r = await pool.query(`
+      SELECT a.*, c.name AS class_name, c.join_code,
+        (SELECT COUNT(*)::int FROM class_members cm WHERE cm.class_id = a.class_id) AS student_count,
+        (SELECT COUNT(DISTINCT hs.user_name)::int FROM homework_submissions hs WHERE hs.assignment_id = a.id) AS completed_count,
+        (SELECT COUNT(*)::int FROM homework_submissions hs WHERE hs.assignment_id = a.id) AS total_submissions
+      FROM assignments a
+      JOIN classes c ON c.id = a.class_id
+      ${isAll ? "" : "WHERE a.class_id = $1"}
+      ORDER BY a.created_at DESC
+    `, isAll ? [] : [classId]);
+
+    res.json({ ok: true, assignments: r.rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Create a new assignment for a class (supports manual question_ids OR auto-generate by filter)
+app.post("/api/teacher/classes/:id/assignments", requireTeacher, async (req, res) => {
+  try {
+    const classId = req.params.id;
+    const classCheck = await pool.query("SELECT * FROM classes WHERE id = $1", [classId]);
+    if (!classCheck.rowCount) return res.status(404).json({ ok: false, error: "class-not-found" });
+
+    const title = String(req.body.title || "").trim().slice(0, 120);
+    if (!title) return res.status(400).json({ ok: false, error: "title-required" });
+
+    const description = String(req.body.description || "").trim().slice(0, 500);
+    const domainFilter = req.body.domain && req.body.domain !== "All" && req.body.domain !== "all" ? String(req.body.domain).trim() : null;
+    const difficultyFilter = req.body.difficulty && req.body.difficulty !== "All" && req.body.difficulty !== "all" ? String(req.body.difficulty).trim() : null;
+    const dueAt = req.body.due_at ? new Date(req.body.due_at).toISOString() : null;
+
+    let questionIds = Array.isArray(req.body.question_ids)
+      ? req.body.question_ids.map(id => String(id).trim()).filter(Boolean)
+      : [];
+
+    const all = loadSatDb();
+    const byId = new Set(all.map(q => q.id));
+    questionIds = [...new Set(questionIds)].filter(id => byId.has(id));
+
+    // Auto-generate questions if manual question_ids were not provided
+    if (!questionIds.length) {
+      const wantCount = Math.min(50, Math.max(1, +(req.body.count || 10)));
+      let poolQs = all.slice();
+      if (domainFilter) poolQs = poolQs.filter(q => q.domain === domainFilter);
+      if (difficultyFilter) poolQs = poolQs.filter(q => q.difficulty === difficultyFilter);
+
+      if (!poolQs.length) {
+        return res.status(400).json({ ok: false, error: "no-matching-questions" });
+      }
+      // Shuffle poolQs using Fisher-Yates
+      for (let i = poolQs.length - 1; i > 0; i--) {
+        const j = crypto.randomInt(0, i + 1);
+        const tmp = poolQs[i];
+        poolQs[i] = poolQs[j];
+        poolQs[j] = tmp;
+      }
+      questionIds = poolQs.slice(0, wantCount).map(q => q.id);
+    }
+
+    const r = await pool.query(
+      `INSERT INTO assignments (class_id, title, description, question_ids, domain_filter, difficulty_filter, due_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [classId, title, description, questionIds, domainFilter, difficultyFilter, dueAt]
+    );
+
+    const created = r.rows[0];
+    // Notify enrolled students in real time
+    const members = await pool.query("SELECT user_name FROM class_members WHERE class_id = $1", [classId]);
+    for (const m of members.rows) {
+      io.to("user:" + m.user_name).emit("homework:updated", { classId, assignmentId: created.id });
+    }
+
+    res.json({ ok: true, assignment: created });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Delete an assignment
+app.delete("/api/teacher/assignments/:id", requireTeacher, async (req, res) => {
+  try {
+    const r = await pool.query("DELETE FROM assignments WHERE id = $1 RETURNING id, class_id", [req.params.id]);
+    if (!r.rowCount) return res.status(404).json({ ok: false, error: "not-found" });
+    io.emit("homework:updated", { assignmentId: req.params.id });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Detailed gradebook & per-question analytics for an assignment
+app.get("/api/teacher/assignments/:id/analytics", requireTeacher, async (req, res) => {
+  try {
+    const assignmentId = req.params.id;
+    const aRes = await pool.query(`
+      SELECT a.*, c.name AS class_name, c.join_code
+      FROM assignments a
+      JOIN classes c ON c.id = a.class_id
+      WHERE a.id = $1
+    `, [assignmentId]);
+    if (!aRes.rowCount) return res.status(404).json({ ok: false, error: "assignment-not-found" });
+
+    const assignment = aRes.rows[0];
+    const [membersRes, subsRes] = await Promise.all([
+      pool.query(`
+        SELECT cm.user_name, cm.joined_at
+        FROM class_members cm
+        WHERE cm.class_id = $1
+        ORDER BY cm.user_name ASC
+      `, [assignment.class_id]),
+      pool.query(`
+        SELECT *
+        FROM homework_submissions
+        WHERE assignment_id = $1
+        ORDER BY submitted_at ASC
+      `, [assignmentId]),
+    ]);
+
+    const allQs = loadSatDb();
+    const qMap = {};
+    for (const q of allQs) {
+      if (q && q.id) qMap[q.id] = q;
+    }
+
+    const qIds = assignment.question_ids || [];
+    const totalQ = qIds.length;
+
+    // Group submissions by student
+    const subsByStudent = {};
+    for (const sub of subsRes.rows) {
+      if (!subsByStudent[sub.user_name]) subsByStudent[sub.user_name] = [];
+      subsByStudent[sub.user_name].push(sub);
+    }
+
+    // Include any student who submitted even if later removed, plus all current class members
+    const allStudentNames = [...new Set([
+      ...membersRes.rows.map(m => m.user_name),
+      ...Object.keys(subsByStudent),
+    ])].sort((a, b) => a.localeCompare(b));
+
+    const studentRows = allStudentNames.map(name => {
+      const subs = subsByStudent[name] || [];
+      if (!subs.length) {
+        return {
+          name,
+          completed: false,
+          attemptsCount: 0,
+          bestScore: null,
+          firstScore: null,
+          latestScore: null,
+          total: totalQ,
+          bestPct: null,
+          isLate: false,
+          firstSubmittedAt: null,
+          lastSubmittedAt: null,
+          latestAnswers: {},
+          history: [],
+        };
+      }
+      let bestSub = subs[0];
+      for (const s of subs) {
+        if (s.score > bestSub.score) bestSub = s;
+      }
+      const firstSub = subs[0];
+      const latestSub = subs[subs.length - 1];
+      return {
+        name,
+        completed: true,
+        attemptsCount: subs.length,
+        bestScore: bestSub.score,
+        firstScore: firstSub.score,
+        latestScore: latestSub.score,
+        total: totalQ,
+        bestPct: totalQ > 0 ? Math.round((bestSub.score / totalQ) * 100) : 0,
+        isLate: Boolean(firstSub.is_late),
+        firstSubmittedAt: firstSub.submitted_at,
+        lastSubmittedAt: latestSub.submitted_at,
+        latestAnswers: latestSub.answers || {},
+        bestAnswers: bestSub.answers || {},
+        history: subs.map(s => ({
+          attemptNumber: s.attempt_number,
+          score: s.score,
+          total: s.total,
+          isLate: s.is_late,
+          submittedAt: s.submitted_at,
+          answers: s.answers,
+        })),
+      };
+    });
+
+    // Per-question breakdown across students' latest submissions
+    const questionStats = qIds.map((qid, idx) => {
+      const qObj = qMap[qid] || { id: qid, domain: "Unknown", skill: "", difficulty: "", correct: "A", question: "" };
+      const counts = { A: 0, B: 0, C: 0, D: 0 };
+      let attempted = 0;
+      let correctCount = 0;
+
+      for (const st of studentRows) {
+        if (!st.completed) continue;
+        const ans = (st.bestAnswers || st.latestAnswers || {})[qid];
+        if (ans) {
+          attempted++;
+          if (counts[ans] !== undefined) counts[ans]++;
+          if (String(ans).toUpperCase() === String(qObj.correct || "").toUpperCase()) {
+            correctCount++;
+          }
+        }
+      }
+
+      return {
+        index: idx + 1,
+        id: qid,
+        domain: qObj.domain || "",
+        skill: qObj.skill || "",
+        difficulty: qObj.difficulty || "",
+        correct: qObj.correct || "",
+        question: qObj.question || "",
+        passage: qObj.passage || "",
+        choices: qObj.choices || {},
+        rationale: qObj.rationale || "",
+        attempted,
+        correctCount,
+        accuracy: attempted > 0 ? Math.round((correctCount / attempted) * 100) : null,
+        choiceCounts: counts,
+      };
+    });
+
+    res.json({
+      ok: true,
+      assignment,
+      students: studentRows,
+      questions: questionStats,
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── Student Homework Endpoints ───────────────────────────────────────────────
+
+// Join a class via 6-character join code
+app.post("/api/student/classes/join", async (req, res) => {
+  try {
+    const auth = await checkPin(req.body.name, req.body.pin);
+    if (!auth.ok) return res.status(403).json(auth);
+
+    const code = String(req.body.join_code || "").trim().toUpperCase();
+    if (!code) return res.status(400).json({ ok: false, error: "code-required" });
+
+    const cRes = await pool.query("SELECT * FROM classes WHERE UPPER(join_code) = $1", [code]);
+    if (!cRes.rowCount) return res.status(404).json({ ok: false, error: "invalid-join-code" });
+
+    const cls = cRes.rows[0];
+    await pool.query(
+      "INSERT INTO class_members (class_id, user_name) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+      [cls.id, auth.name]
+    );
+
+    res.json({ ok: true, class: cls });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Leave a class
+app.post("/api/student/classes/leave", async (req, res) => {
+  try {
+    const auth = await checkPin(req.body.name, req.body.pin);
+    if (!auth.ok) return res.status(403).json(auth);
+
+    const classId = req.body.class_id;
+    await pool.query("DELETE FROM class_members WHERE class_id = $1 AND user_name = $2", [classId, auth.name]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Get enrolled classes & homework assignments for student
+app.get("/api/student/homework", async (req, res) => {
+  try {
+    const auth = await checkPin(req.query.name, req.query.pin);
+    if (!auth.ok) return res.status(403).json(auth);
+
+    const classesRes = await pool.query(`
+      SELECT c.id, c.name, c.join_code, cm.joined_at
+      FROM class_members cm
+      JOIN classes c ON c.id = cm.class_id
+      WHERE cm.user_name = $1
+      ORDER BY cm.joined_at DESC
+    `, [auth.name]);
+
+    const classes = classesRes.rows;
+    const classIds = classes.map(c => c.id);
+
+    if (!classIds.length) {
+      return res.json({ ok: true, classes: [], assignments: [] });
+    }
+
+    const [assignRes, subRes] = await Promise.all([
+      pool.query(`
+        SELECT a.*, c.name AS class_name
+        FROM assignments a
+        JOIN classes c ON c.id = a.class_id
+        WHERE a.class_id = ANY($1)
+        ORDER BY a.created_at DESC
+      `, [classIds]),
+      pool.query(`
+        SELECT *
+        FROM homework_submissions
+        WHERE user_name = $1
+        ORDER BY submitted_at ASC
+      `, [auth.name]),
+    ]);
+
+    const subsByAssign = {};
+    for (const s of subRes.rows) {
+      if (!subsByAssign[s.assignment_id]) subsByAssign[s.assignment_id] = [];
+      subsByAssign[s.assignment_id].push(s);
+    }
+
+    const assignments = assignRes.rows.map(a => {
+      const subs = subsByAssign[a.id] || [];
+      const total = (a.question_ids || []).length;
+      let bestScore = null;
+      for (const s of subs) {
+        if (bestScore === null || s.score > bestScore) bestScore = s.score;
+      }
+      const latestSub = subs.length ? subs[subs.length - 1] : null;
+      const firstSub = subs.length ? subs[0] : null;
+
+      return {
+        id: a.id,
+        classId: a.class_id,
+        className: a.class_name,
+        title: a.title,
+        description: a.description,
+        questionIds: a.question_ids || [],
+        domainFilter: a.domain_filter,
+        difficultyFilter: a.difficulty_filter,
+        dueAt: a.due_at,
+        createdAt: a.created_at,
+        total,
+        completed: subs.length > 0,
+        attemptsCount: subs.length,
+        bestScore,
+        latestScore: latestSub ? latestSub.score : null,
+        isLate: firstSub ? Boolean(firstSub.is_late) : (a.due_at ? new Date() > new Date(a.due_at) : false),
+        lastSubmittedAt: latestSub ? latestSub.submitted_at : null,
+        latestAnswers: latestSub ? (latestSub.answers || {}) : {},
+      };
+    });
+
+    res.json({ ok: true, classes, assignments });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Submit a homework practice attempt (unlimited retries supported)
+app.post("/api/student/homework/:id/submit", async (req, res) => {
+  try {
+    const auth = await checkPin(req.body.name, req.body.pin);
+    if (!auth.ok) return res.status(403).json(auth);
+
+    const assignmentId = req.params.id;
+    const aRes = await pool.query("SELECT * FROM assignments WHERE id = $1", [assignmentId]);
+    if (!aRes.rowCount) return res.status(404).json({ ok: false, error: "assignment-not-found" });
+
+    const assignment = aRes.rows[0];
+    const qIds = assignment.question_ids || [];
+    const answersIn = req.body.answers && typeof req.body.answers === "object" ? req.body.answers : {};
+
+    const allQs = loadSatDb();
+    const qMap = {};
+    for (const q of allQs) {
+      if (q && q.id) qMap[q.id] = q;
+    }
+
+    let score = 0;
+    const cleanAnswers = {};
+    const results = {};
+
+    for (const qid of qIds) {
+      const qObj = qMap[qid];
+      const rawAns = answersIn[qid] ? String(answersIn[qid]).trim().toUpperCase() : "";
+      if (["A", "B", "C", "D"].includes(rawAns)) {
+        cleanAnswers[qid] = rawAns;
+      }
+      const correctChoice = qObj && qObj.correct ? String(qObj.correct).trim().toUpperCase() : "";
+      const isCorrect = Boolean(rawAns && correctChoice && rawAns === correctChoice);
+      if (isCorrect) score++;
+      results[qid] = {
+        selected: rawAns || null,
+        correct: correctChoice || null,
+        isCorrect,
+      };
+    }
+
+    const total = qIds.length;
+    const isLate = assignment.due_at ? (new Date() > new Date(assignment.due_at)) : false;
+
+    const countRes = await pool.query(
+      "SELECT COALESCE(MAX(attempt_number), 0)::int AS max_att, COALESCE(MAX(score), 0)::int AS max_score FROM homework_submissions WHERE assignment_id = $1 AND user_name = $2",
+      [assignmentId, auth.name]
+    );
+    const attemptNumber = (countRes.rows[0]?.max_att || 0) + 1;
+    const prevBest = countRes.rows[0]?.max_score || 0;
+    const bestScore = Math.max(prevBest, score);
+
+    const ins = await pool.query(
+      `INSERT INTO homework_submissions (assignment_id, user_name, attempt_number, score, total, answers, is_late)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [assignmentId, auth.name, attemptNumber, score, total, JSON.stringify(cleanAnswers), isLate]
+    );
+
+    res.json({
+      ok: true,
+      submission: ins.rows[0],
+      results,
+      summary: {
+        attemptNumber,
+        score,
+        total,
+        bestScore,
+        isLate,
+      },
+    });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
