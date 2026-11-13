@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { hwFetch } from "../../utils/homeworkApi";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { hwFetch, loadClientSatDb } from "../../utils/homeworkApi";
 
 const DOMAINS = [
   "Information and Ideas",
@@ -8,6 +8,7 @@ const DOMAINS = [
   "Standard English Conventions",
 ];
 const DIFFICULTIES = ["Easy", "Medium", "Hard"];
+const COUNT_PRESETS = [5, 10, 15, 20];
 
 export default function TeacherPortal({ onExit }) {
   const [teacherKey, setTeacherKey] = useState(
@@ -17,16 +18,22 @@ export default function TeacherPortal({ onExit }) {
   const [pwdInput, setPwdInput] = useState("");
   const [authErr, setAuthErr] = useState("");
 
-  const [activeNav, setActiveNav] = useState("classes"); // "classes" | "create" | "gradebook"
+  // Question Bank loaded on client from /sat_db.json
+  const [questionBank, setQuestionBank] = useState([]);
+
+  // Classes & Active Class
   const [classes, setClasses] = useState([]);
   const [selectedClassId, setSelectedClassId] = useState("");
   const [classStudents, setClassStudents] = useState([]);
   const [classAssignments, setClassAssignments] = useState([]);
+  const [creatingClass, setCreatingClass] = useState(false);
   const [newClassName, setNewClassName] = useState("");
   const [copiedCode, setCopiedCode] = useState("");
 
-  // Create Assignment state
-  const [assignClassId, setAssignClassId] = useState("");
+  // View inside selected class: "overview" | "new-assignment" | "gradebook"
+  const [subView, setSubView] = useState("overview");
+
+  // New Assignment form state
   const [assignTitle, setAssignTitle] = useState("");
   const [assignDue, setAssignDue] = useState("");
   const [pickMode, setPickMode] = useState("filter"); // "filter" | "manual"
@@ -34,36 +41,50 @@ export default function TeacherPortal({ onExit }) {
   const [filterDiff, setFilterDiff] = useState("All");
   const [filterCount, setFilterCount] = useState(10);
 
-  // Manual Question Picker state
+  // Manual Question Picker state (client-side instant filtering)
   const [qSearch, setQSearch] = useState("");
   const [qDomain, setQDomain] = useState("All");
   const [qDiff, setQDiff] = useState("All");
   const [qPage, setQPage] = useState(1);
-  const [qData, setQData] = useState({ questions: [], total: 0, totalPages: 1 });
-  const [qLoading, setQLoading] = useState(false);
   const [selectedQIds, setSelectedQIds] = useState([]);
   const [expandedQId, setExpandedQId] = useState(null);
   const [createMsg, setCreateMsg] = useState(null);
+  const [creatingAssign, setCreatingAssign] = useState(false);
 
-  // Gradebook Analytics state
-  const [analyticsAssignmentId, setAnalyticsAssignmentId] = useState("");
+  // Gradebook & Analytics state
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
-  const [analyticsTab, setAnalyticsTab] = useState("students"); // "students" | "questions"
+  const [analyticsTab, setAnalyticsTab] = useState("questions"); // "students" | "questions"
+  const [qSort, setQSort] = useState("order"); // "order" | "hardest"
+  const [expandedAnalyticsQId, setExpandedAnalyticsQId] = useState(null);
   const [inspectStudent, setInspectStudent] = useState(null);
 
   const tFetch = useCallback(
-    (path, opts = {}) => {
-      return hwFetch(path, {
+    (path, opts = {}) =>
+      hwFetch(path, {
         ...opts,
         headers: {
           "x-teacher-key": teacherKey,
           ...(opts.headers || {}),
         },
-      });
-    },
+      }),
     [teacherKey]
   );
+
+  // Load client question bank once
+  useEffect(() => {
+    loadClientSatDb().then((db) => {
+      if (Array.isArray(db)) setQuestionBank(db);
+    });
+  }, []);
+
+  const qById = useMemo(() => {
+    const map = {};
+    for (const q of questionBank) {
+      if (q && q.id) map[q.id] = q;
+    }
+    return map;
+  }, [questionBank]);
 
   // Verify stored teacherKey on mount
   useEffect(() => {
@@ -71,10 +92,10 @@ export default function TeacherPortal({ onExit }) {
     tFetch("/api/teacher/classes").then((res) => {
       if (res && res.ok) {
         setAuthed(true);
-        setClasses(res.classes || []);
-        if (res.classes && res.classes.length && !selectedClassId) {
-          setSelectedClassId(res.classes[0].id);
-          setAssignClassId(res.classes[0].id);
+        const list = res.classes || [];
+        setClasses(list);
+        if (list.length > 0 && !selectedClassId) {
+          setSelectedClassId(list[0].id);
         }
       } else {
         setAuthed(false);
@@ -97,7 +118,7 @@ export default function TeacherPortal({ onExit }) {
       setTeacherKey(pwd);
       setAuthed(true);
     } else {
-      setAuthErr("Invalid teacher passcode.");
+      setAuthErr("Incorrect passcode.");
     }
   };
 
@@ -109,11 +130,8 @@ export default function TeacherPortal({ onExit }) {
       if (list.length > 0 && !selectedClassId) {
         setSelectedClassId(list[0].id);
       }
-      if (list.length > 0 && !assignClassId) {
-        setAssignClassId(list[0].id);
-      }
     }
-  }, [tFetch, selectedClassId, assignClassId]);
+  }, [tFetch, selectedClassId]);
 
   const loadClassDetails = useCallback(
     async (cid) => {
@@ -138,44 +156,37 @@ export default function TeacherPortal({ onExit }) {
     }
   }, [authed, selectedClassId, loadClassDetails]);
 
-  // Question Bank search for Manual Picker
-  const loadQuestions = useCallback(async () => {
-    if (!authed || activeNav !== "create" || pickMode !== "manual") return;
-    setQLoading(true);
-    const params = new URLSearchParams({
-      q: qSearch,
-      domain: qDomain === "All" ? "" : qDomain,
-      difficulty: qDiff === "All" ? "" : qDiff,
-      page: String(qPage),
-      limit: "20",
+  // Filter pool for Auto-Generate mode
+  const matchingAutoPool = useMemo(() => {
+    return questionBank.filter((q) => {
+      if (!q || !q.id) return false;
+      if (filterDomain !== "All" && q.domain !== filterDomain) return false;
+      if (filterDiff !== "All" && q.difficulty !== filterDiff) return false;
+      return true;
     });
-    const res = await tFetch(`/api/teacher/questions?${params.toString()}`);
-    setQLoading(false);
-    if (res && res.ok) {
-      setQData({
-        questions: res.questions || [],
-        total: res.total || 0,
-        totalPages: res.totalPages || 1,
-      });
-    }
-  }, [authed, activeNav, pickMode, qSearch, qDomain, qDiff, qPage, tFetch]);
+  }, [questionBank, filterDomain, filterDiff]);
 
-  useEffect(() => {
-    loadQuestions();
-  }, [loadQuestions]);
+  // Filtered questions for Manual Hand-Pick mode
+  const filteredManualQuestions = useMemo(() => {
+    const term = qSearch.trim().toLowerCase();
+    return questionBank.filter((q) => {
+      if (!q || !q.id) return false;
+      if (qDomain !== "All" && q.domain !== qDomain) return false;
+      if (qDiff !== "All" && q.difficulty !== qDiff) return false;
+      if (term) {
+        const hay = `${q.id} ${q.skill || ""} ${q.question || ""}`.toLowerCase();
+        if (!hay.includes(term)) return false;
+      }
+      return true;
+    });
+  }, [questionBank, qDomain, qDiff, qSearch]);
 
-  // Load Analytics when analyticsAssignmentId changes
-  const openAnalytics = async (assignmentId) => {
-    setAnalyticsAssignmentId(assignmentId);
-    setActiveNav("gradebook");
-    setAnalyticsLoading(true);
-    setInspectStudent(null);
-    const res = await tFetch(`/api/teacher/assignments/${encodeURIComponent(assignmentId)}/analytics`);
-    setAnalyticsLoading(false);
-    if (res && res.ok) {
-      setAnalyticsData(res);
-    }
-  };
+  const pageSize = 15;
+  const totalManualPages = Math.max(1, Math.ceil(filteredManualQuestions.length / pageSize));
+  const currentManualSlice = useMemo(() => {
+    const start = (qPage - 1) * pageSize;
+    return filteredManualQuestions.slice(start, start + pageSize);
+  }, [filteredManualQuestions, qPage]);
 
   const handleCreateClass = async (e) => {
     e.preventDefault();
@@ -187,9 +198,10 @@ export default function TeacherPortal({ onExit }) {
     });
     if (res && res.ok) {
       setNewClassName("");
+      setCreatingClass(false);
       await loadClasses();
       setSelectedClassId(res.class.id);
-      setAssignClassId(res.class.id);
+      setSubView("overview");
     }
   };
 
@@ -202,6 +214,7 @@ export default function TeacherPortal({ onExit }) {
       const next = classes.filter((c) => c.id !== cid);
       setClasses(next);
       setSelectedClassId(next[0]?.id || "");
+      setSubView("overview");
     }
   };
 
@@ -225,51 +238,73 @@ export default function TeacherPortal({ onExit }) {
   const handleCreateAssignment = async (e) => {
     e.preventDefault();
     setCreateMsg(null);
-    const targetClass = assignClassId || selectedClassId;
-    if (!targetClass) {
-      setCreateMsg({ ok: false, text: "Create or select a class first." });
+    if (!selectedClassId) {
+      setCreateMsg({ ok: false, text: "Create a class first." });
       return;
     }
     if (!assignTitle.trim()) {
       setCreateMsg({ ok: false, text: "Enter an assignment title." });
       return;
     }
-    if (pickMode === "manual" && selectedQIds.length === 0) {
-      setCreateMsg({ ok: false, text: "Select at least one question from the bank." });
-      return;
+
+    let finalQuestionIds = [];
+    if (pickMode === "manual") {
+      if (selectedQIds.length === 0) {
+        setCreateMsg({ ok: false, text: "Select at least one question." });
+        return;
+      }
+      finalQuestionIds = selectedQIds;
+    } else {
+      const wantCount = Math.min(50, Math.max(1, Number(filterCount) || 10));
+      let pool = matchingAutoPool.slice();
+      if (pool.length === 0) {
+        setCreateMsg({ ok: false, text: "No questions match those filters." });
+        return;
+      }
+      const alreadyUsed = new Set();
+      classAssignments.forEach((a) => {
+        (a.question_ids || []).forEach((id) => alreadyUsed.add(id));
+      });
+      const freshPool = pool.filter((q) => !alreadyUsed.has(q.id));
+      const sourcePool = freshPool.length >= wantCount ? freshPool : pool;
+
+      const shuffled = sourcePool.slice();
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      finalQuestionIds = shuffled.slice(0, wantCount).map((q) => q.id);
     }
 
-    const body = {
-      title: assignTitle.trim(),
-      due_at: assignDue ? new Date(assignDue).toISOString() : null,
-      domain: pickMode === "filter" ? filterDomain : null,
-      difficulty: pickMode === "filter" ? filterDiff : null,
-      count: pickMode === "filter" ? Number(filterCount) || 10 : selectedQIds.length,
-      question_ids: pickMode === "manual" ? selectedQIds : [],
-    };
-
-    const res = await tFetch(`/api/teacher/classes/${encodeURIComponent(targetClass)}/assignments`, {
-      method: "POST",
-      body,
-    });
+    setCreatingAssign(true);
+    const res = await tFetch(
+      `/api/teacher/classes/${encodeURIComponent(selectedClassId)}/assignments`,
+      {
+        method: "POST",
+        body: {
+          title: assignTitle.trim(),
+          due_at: assignDue ? new Date(assignDue).toISOString() : null,
+          domain: pickMode === "filter" && filterDomain !== "All" ? filterDomain : null,
+          difficulty: pickMode === "filter" && filterDiff !== "All" ? filterDiff : null,
+          count: finalQuestionIds.length,
+          question_ids: finalQuestionIds,
+        },
+      }
+    );
+    setCreatingAssign(false);
 
     if (res && res.ok) {
       setAssignTitle("");
       setAssignDue("");
       setSelectedQIds([]);
-      setCreateMsg({
-        ok: true,
-        text: `Created "${res.assignment.title}" (${res.assignment.question_ids.length} questions).`,
-      });
-      loadClasses();
-      loadClassDetails(targetClass);
+      setCreateMsg(null);
+      await loadClasses();
+      await loadClassDetails(selectedClassId);
+      setSubView("overview");
     } else {
       setCreateMsg({
         ok: false,
-        text:
-          res?.error === "no-matching-questions"
-            ? "No questions match those filters."
-            : "Could not create assignment.",
+        text: res?.error || "Could not create assignment.",
       });
     }
   };
@@ -280,20 +315,248 @@ export default function TeacherPortal({ onExit }) {
       method: "DELETE",
     });
     if (res && res.ok) {
-      if (analyticsAssignmentId === aid) {
-        setAnalyticsAssignmentId("");
-        setAnalyticsData(null);
-      }
       loadClasses();
       loadClassDetails(selectedClassId);
+      if (subView === "gradebook") setSubView("overview");
     }
   };
+
+  const openAnalytics = async (assignmentId) => {
+    setSubView("gradebook");
+    setAnalyticsLoading(true);
+    setInspectStudent(null);
+    setExpandedAnalyticsQId(null);
+    const res = await tFetch(
+      `/api/teacher/assignments/${encodeURIComponent(assignmentId)}/analytics`
+    );
+    setAnalyticsLoading(false);
+    if (res && res.ok) {
+      setAnalyticsData(res);
+    }
+  };
+
+  // Re-grade every student's submission history on the client using /sat_db.json
+  // so scores and answers are 100% accurate even if sat_db.json is not on the VPS.
+  const enrichedStudents = useMemo(() => {
+    if (!analyticsData || !Array.isArray(analyticsData.students)) return [];
+    const qIds = (analyticsData.assignment && analyticsData.assignment.question_ids) || [];
+    const total = qIds.length;
+
+    const parseAns = (raw) => {
+      if (!raw) return {};
+      if (typeof raw === "string") {
+        try {
+          return JSON.parse(raw) || {};
+        } catch (e) {
+          return {};
+        }
+      }
+      return typeof raw === "object" ? raw : {};
+    };
+
+    const gradeAnswers = (ansObj) => {
+      let score = 0;
+      let answeredCount = 0;
+      for (const qid of qIds) {
+        const picked = String(ansObj[qid] || "").trim().toUpperCase();
+        if (picked && ["A", "B", "C", "D"].includes(picked)) {
+          answeredCount++;
+          const localQ = qById[qid];
+          const corr = localQ && localQ.correct ? String(localQ.correct).trim().toUpperCase() : "";
+          if (corr && picked === corr) {
+            score++;
+          }
+        }
+      }
+      return { score, answeredCount };
+    };
+
+    return analyticsData.students.map((st) => {
+      if (!st.completed) return st;
+
+      const hist = Array.isArray(st.history) && st.history.length > 0
+        ? st.history
+        : [{ answers: st.latestAnswers || st.bestAnswers || {}, score: st.bestScore || 0 }];
+
+      const gradedHist = hist.map((h) => {
+        const ansObj = parseAns(h.answers);
+        const { score: clientScore, answeredCount } = gradeAnswers(ansObj);
+        const finalScore = Object.keys(qById).length > 0 ? clientScore : (h.score || 0);
+        return {
+          ...h,
+          answers: ansObj,
+          trueScore: finalScore,
+          answeredCount,
+        };
+      });
+
+      let bestAtt = gradedHist[0];
+      for (const att of gradedHist) {
+        if (
+          att.trueScore > bestAtt.trueScore ||
+          (att.trueScore === bestAtt.trueScore && att.answeredCount >= bestAtt.answeredCount)
+        ) {
+          bestAtt = att;
+        }
+      }
+
+      // Also merge any answers from latest attempt if bestAtt had fewer answers
+      const latestAtt = gradedHist[gradedHist.length - 1];
+      const firstAtt = gradedHist[0];
+      const mergedAnswers = { ...(latestAtt.answers || {}), ...(bestAtt.answers || {}) };
+
+      const bestScore = bestAtt.trueScore;
+      const firstScore = firstAtt.trueScore;
+      const latestScore = latestAtt.trueScore;
+      const bestPct = total > 0 ? Math.round((bestScore / total) * 100) : 0;
+
+      return {
+        ...st,
+        bestScore,
+        firstScore,
+        latestScore,
+        total,
+        bestPct,
+        bestAnswers: mergedAnswers,
+        latestAnswers: latestAtt.answers || {},
+        answeredCount: Object.keys(mergedAnswers).length,
+      };
+    });
+  }, [analyticsData, qById]);
+
+  // Enrich gradebook questions using client sat_db.json and enrichedStudents
+  const enrichedAnalyticsQuestions = useMemo(() => {
+    if (!analyticsData || !Array.isArray(analyticsData.questions)) return [];
+    const students = enrichedStudents;
+    return analyticsData.questions.map((q, idx) => {
+      const localQ = qById[q.id] || {};
+      const correct = localQ.correct || q.correct || "";
+      const counts = { A: 0, B: 0, C: 0, D: 0 };
+      const pickedBy = { A: [], B: [], C: [], D: [] };
+      let attempted = 0;
+      let correctCount = 0;
+
+      for (const st of students) {
+        if (!st.completed) continue;
+        const ans = String((st.bestAnswers || st.latestAnswers || {})[q.id] || "")
+          .trim()
+          .toUpperCase();
+        if (ans && counts[ans] !== undefined) {
+          attempted++;
+          counts[ans]++;
+          pickedBy[ans].push(st.name);
+          if (correct && ans === String(correct).toUpperCase()) {
+            correctCount++;
+          }
+        }
+      }
+
+      // Find most common wrong choice (trap answer)
+      let trapChoice = null;
+      let trapCount = 0;
+      ["A", "B", "C", "D"].forEach((k) => {
+        if (k !== correct && counts[k] > trapCount) {
+          trapCount = counts[k];
+          trapChoice = k;
+        }
+      });
+
+      return {
+        ...q,
+        index: idx + 1,
+        domain: localQ.domain || (q.domain && q.domain !== "Unknown" ? q.domain : "Reading & Writing"),
+        skill: localQ.skill || q.skill || "",
+        difficulty: localQ.difficulty || q.difficulty || "",
+        correct,
+        question: localQ.question || q.question || "",
+        choices: localQ.choices || q.choices || {},
+        rationale: localQ.rationale || q.rationale || "",
+        attempted,
+        correctCount,
+        accuracy: attempted > 0 ? Math.round((correctCount / attempted) * 100) : null,
+        choiceCounts: counts,
+        pickedBy,
+        trapChoice: trapCount > 0 ? { letter: trapChoice, count: trapCount } : null,
+      };
+    });
+  }, [analyticsData, enrichedStudents, qById]);
+
+  // Compute class-level summary KPIs for the assignment
+  const analyticsKpis = useMemo(() => {
+    if (!analyticsData) return null;
+    const students = enrichedStudents;
+    const completedStudents = students.filter((s) => s.completed);
+    const avgBestPct =
+      completedStudents.length > 0
+        ? Math.round(
+            completedStudents.reduce((acc, s) => acc + (s.bestPct || 0), 0) /
+              completedStudents.length
+          )
+        : null;
+
+    const firstPcts = completedStudents
+      .filter((s) => s.firstScore !== null && s.total > 0)
+      .map((s) => Math.round((s.firstScore / s.total) * 100));
+    const avgFirstPct =
+      firstPcts.length > 0
+        ? Math.round(firstPcts.reduce((a, b) => a + b, 0) / firstPcts.length)
+        : null;
+
+    // Hardest question (lowest accuracy among attempted questions)
+    const attemptedQs = enrichedAnalyticsQuestions.filter((q) => q.accuracy !== null);
+    let hardestQ = null;
+    for (const q of attemptedQs) {
+      if (!hardestQ || q.accuracy < hardestQ.accuracy) {
+        hardestQ = q;
+      }
+    }
+
+    // Weakest skill across questions
+    const bySkill = {};
+    for (const q of attemptedQs) {
+      const sk = q.skill || q.domain || "General";
+      if (!bySkill[sk]) bySkill[sk] = { earned: 0, total: 0 };
+      bySkill[sk].earned += q.correctCount;
+      bySkill[sk].total += q.attempted;
+    }
+    let weakestSkill = null;
+    Object.entries(bySkill).forEach(([skill, d]) => {
+      if (d.total > 0) {
+        const pct = Math.round((d.earned / d.total) * 100);
+        if (!weakestSkill || pct < weakestSkill.pct) {
+          weakestSkill = { skill, pct };
+        }
+      }
+    });
+
+    return {
+      totalStudents: students.length,
+      completedCount: completedStudents.length,
+      avgBestPct,
+      avgFirstPct,
+      hardestQ,
+      weakestSkill,
+    };
+  }, [analyticsData, enrichedStudents, enrichedAnalyticsQuestions]);
+
+  const sortedAnalyticsQuestions = useMemo(() => {
+    const list = enrichedAnalyticsQuestions.slice();
+    if (qSort === "hardest") {
+      list.sort((a, b) => {
+        const accA = a.accuracy === null ? 999 : a.accuracy;
+        const accB = b.accuracy === null ? 999 : b.accuracy;
+        if (accA !== accB) return accA - accB;
+        return a.index - b.index;
+      });
+    }
+    return list;
+  }, [enrichedAnalyticsQuestions, qSort]);
 
   const copyJoinCode = (code) => {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(code);
       setCopiedCode(code);
-      setTimeout(() => setCopiedCode(""), 1800);
+      setTimeout(() => setCopiedCode(""), 1600);
     }
   };
 
@@ -301,22 +564,25 @@ export default function TeacherPortal({ onExit }) {
     return (
       <div className="tp-login-wrap">
         <form className="tp-login-card" onSubmit={handleLogin}>
-          <div className="tp-login-title">Teacher Portal</div>
+          <h2 className="chall-title" style={{ fontSize: "24px" }}>
+            Teacher Portal
+          </h2>
+          <div className="chall-rule" style={{ marginBottom: "18px" }}></div>
           <input
             type="password"
             className="tp-input"
-            placeholder="Enter teacher passcode"
+            placeholder="Teacher passcode"
             value={pwdInput}
             onChange={(e) => setPwdInput(e.target.value)}
             autoFocus
           />
           {authErr && <div className="tp-err">{authErr}</div>}
           <div className="tp-login-actions">
-            <button type="button" className="btn-ghost" onClick={onExit}>
-              Back to Exam
+            <button type="button" className="hw-action-btn ghost" onClick={onExit}>
+              Back
             </button>
-            <button type="submit" className="btn-blue">
-              Enter Portal
+            <button type="submit" className="hw-action-btn primary">
+              Continue
             </button>
           </div>
         </form>
@@ -328,45 +594,64 @@ export default function TeacherPortal({ onExit }) {
 
   return (
     <div className="tp-shell">
+      {/* Minimalist Top Bar */}
       <header className="tp-topbar">
         <div className="tp-brand">
-          <span className="tp-brand-title">SAT Teacher Portal</span>
-          <div className="tp-nav">
-            <button
-              type="button"
-              className={activeNav === "classes" ? "active" : ""}
-              onClick={() => setActiveNav("classes")}
-            >
-              Classes & Assignments
-            </button>
-            <button
-              type="button"
-              className={activeNav === "create" ? "active" : ""}
-              onClick={() => setActiveNav("create")}
-            >
-              Create Homework
-            </button>
-            <button
-              type="button"
-              className={activeNav === "gradebook" ? "active" : ""}
-              onClick={() => {
-                setActiveNav("gradebook");
-                if (!analyticsAssignmentId && classAssignments.length > 0) {
-                  openAnalytics(classAssignments[0].id);
-                }
-              }}
-            >
-              Gradebook & Analytics
-            </button>
+          <span className="tp-brand-title">Teacher</span>
+          <div className="tp-class-pills">
+            {classes.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className={`tp-class-tab ${c.id === selectedClassId ? "active" : ""}`}
+                onClick={() => {
+                  setSelectedClassId(c.id);
+                  setSubView("overview");
+                }}
+              >
+                {c.name}
+              </button>
+            ))}
+            {creatingClass ? (
+              <form className="tp-inline-class-form" onSubmit={handleCreateClass}>
+                <input
+                  type="text"
+                  className="tp-inline-input"
+                  placeholder="Class name..."
+                  value={newClassName}
+                  onChange={(e) => setNewClassName(e.target.value)}
+                  autoFocus
+                />
+                <button type="submit" className="tp-pill-btn dark">
+                  Add
+                </button>
+                <button
+                  type="button"
+                  className="tp-pill-btn"
+                  onClick={() => setCreatingClass(false)}
+                >
+                  Cancel
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                className="tp-class-tab add"
+                onClick={() => setCreatingClass(true)}
+              >
+                + New Class
+              </button>
+            )}
           </div>
         </div>
+
         <div className="tp-top-actions">
-          <button type="button" className="btn-ghost" onClick={onExit}>
-            Student View
+          <button type="button" className="tp-pill-btn" onClick={onExit}>
+            Exam View
           </button>
           <button
             type="button"
-            className="btn-ghost"
+            className="tp-pill-btn"
             onClick={() => {
               sessionStorage.removeItem("satbank:teacherKey");
               setTeacherKey("");
@@ -379,184 +664,155 @@ export default function TeacherPortal({ onExit }) {
       </header>
 
       <main className="tp-main">
-        {/* TAB 1: CLASSES, ROSTERS & ASSIGNMENTS */}
-        {activeNav === "classes" && (
-          <div className="tp-grid-layout">
-            {/* Left Sidebar: Classes List */}
-            <aside className="tp-sidebar-card">
-              <div className="tp-sec-head">Classes</div>
-              <form className="tp-create-class-form" onSubmit={handleCreateClass}>
-                <input
-                  type="text"
-                  className="tp-input"
-                  placeholder="New class name (e.g. Period 2)"
-                  value={newClassName}
-                  onChange={(e) => setNewClassName(e.target.value)}
-                />
-                <button type="submit" className="btn-blue">
-                  Create
+        {!currentClass ? (
+          <div className="tp-empty-state">
+            <h3>Create your first class</h3>
+            <p>Students will join using a 6-character class code.</p>
+            <form className="tp-first-class-form" onSubmit={handleCreateClass}>
+              <input
+                type="text"
+                className="tp-input"
+                placeholder="Class name (e.g. Period 3 SAT)"
+                value={newClassName}
+                onChange={(e) => setNewClassName(e.target.value)}
+              />
+              <button type="submit" className="hw-action-btn primary">
+                Create Class
+              </button>
+            </form>
+          </div>
+        ) : (
+          <div className="tp-workspace">
+            {/* Class Header Strip */}
+            <div className="tp-class-header">
+              <div className="tp-class-meta">
+                <h1 className="tp-class-h1">{currentClass.name}</h1>
+                <button
+                  type="button"
+                  className="tp-code-chip"
+                  onClick={() => copyJoinCode(currentClass.join_code)}
+                  title="Click to copy join code"
+                >
+                  <span>Code:</span>
+                  <strong>{currentClass.join_code}</strong>
+                  <small>{copiedCode === currentClass.join_code ? "Copied" : "Copy"}</small>
                 </button>
-              </form>
+              </div>
 
-              <div className="tp-class-list">
-                {classes.length === 0 ? (
-                  <div className="tp-empty">No classes yet. Create one above.</div>
+              <div className="tp-header-actions">
+                {subView !== "overview" ? (
+                  <button
+                    type="button"
+                    className="hw-action-btn ghost"
+                    onClick={() => setSubView("overview")}
+                  >
+                    Back to Class
+                  </button>
                 ) : (
-                  classes.map((c) => (
-                    <div
-                      key={c.id}
-                      className={`tp-class-item ${c.id === selectedClassId ? "sel" : ""}`}
+                  <>
+                    <button
+                      type="button"
+                      className="tp-text-danger"
+                      onClick={() => handleDeleteClass(currentClass.id)}
+                    >
+                      Delete Class
+                    </button>
+                    <button
+                      type="button"
+                      className="hw-action-btn primary"
                       onClick={() => {
-                        setSelectedClassId(c.id);
-                        setAssignClassId(c.id);
+                        setCreateMsg(null);
+                        setSubView("new-assignment");
                       }}
                     >
-                      <div>
-                        <div className="tp-class-name">{c.name}</div>
-                        <div className="tp-class-sub">
-                          {c.student_count} students · {c.assignment_count} assignments
-                        </div>
-                      </div>
-                      <span className="tp-code-badge">{c.join_code}</span>
-                    </div>
-                  ))
+                      + New Assignment
+                    </button>
+                  </>
                 )}
               </div>
-            </aside>
+            </div>
 
-            {/* Right Content: Selected Class Roster & Assignments */}
-            <section className="tp-content-col">
-              {!currentClass ? (
-                <div className="tp-card tp-empty">Select or create a class to manage homework.</div>
-              ) : (
-                <>
-                  <div className="tp-card tp-class-banner">
-                    <div>
-                      <h2 className="tp-h2">{currentClass.name}</h2>
-                      <div className="tp-join-line">
-                        <span>Student Join Code:</span>
-                        <strong className="tp-join-code-lg">{currentClass.join_code}</strong>
-                        <button
-                          type="button"
-                          className="tp-btn-sm"
-                          onClick={() => copyJoinCode(currentClass.join_code)}
+            {/* SUBVIEW 1: CLASS OVERVIEW (ASSIGNMENTS + STUDENTS) */}
+            {subView === "overview" && (
+              <div className="tp-overview-stack">
+                <section className="tp-section">
+                  <div className="tp-sec-label">
+                    Assignments ({classAssignments.length})
+                  </div>
+                  {classAssignments.length === 0 ? (
+                    <div className="tp-empty-box">
+                      No assignments yet. Click <strong>+ New Assignment</strong> to assign practice questions.
+                    </div>
+                  ) : (
+                    <div className="tp-assign-list">
+                      {classAssignments.map((a, idx) => (
+                        <div
+                          key={a.id}
+                          className="tp-assign-card"
+                          style={{ animationDelay: `${Math.min(idx * 35, 180)}ms` }}
                         >
-                          {copiedCode === currentClass.join_code ? "Copied" : "Copy Code"}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="tp-banner-btns">
-                      <button
-                        type="button"
-                        className="btn-blue"
-                        onClick={() => {
-                          setAssignClassId(currentClass.id);
-                          setActiveNav("create");
-                        }}
-                      >
-                        New Assignment
-                      </button>
-                      <button
-                        type="button"
-                        className="tp-btn-danger"
-                        onClick={() => handleDeleteClass(currentClass.id)}
-                      >
-                        Delete Class
-                      </button>
-                    </div>
-                  </div>
+                          <div className="tp-assign-info">
+                            <div className="tp-assign-title">{a.title}</div>
+                            <div className="tp-assign-sub">
+                              <span>{(a.question_ids || []).length} questions</span>
+                              {a.domain_filter && <span>· {a.domain_filter}</span>}
+                              {a.difficulty_filter && <span>· {a.difficulty_filter}</span>}
+                              {a.due_at && (
+                                <span>
+                                  · Due{" "}
+                                  {new Date(a.due_at).toLocaleDateString(undefined, {
+                                    month: "short",
+                                    day: "numeric",
+                                  })}
+                                </span>
+                              )}
+                            </div>
+                          </div>
 
-                  {/* Assignments for this Class */}
-                  <div className="tp-card">
-                    <div className="tp-sec-head">
-                      Assignments ({classAssignments.length})
+                          <div className="tp-assign-right">
+                            <div className="tp-completion-pill">
+                              <strong>{a.completed_count}</strong> / {a.student_count} done
+                            </div>
+                            <button
+                              type="button"
+                              className="hw-action-btn ghost"
+                              onClick={() => openAnalytics(a.id)}
+                            >
+                              Analysis
+                            </button>
+                            <button
+                              type="button"
+                              className="tp-icon-del"
+                              title="Delete assignment"
+                              onClick={() => handleDeleteAssignment(a.id)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    {classAssignments.length === 0 ? (
-                      <div className="tp-empty">
-                        No homework assigned to this class yet.
-                      </div>
-                    ) : (
-                      <table className="tp-table">
-                        <thead>
-                          <tr>
-                            <th>Title</th>
-                            <th>Questions</th>
-                            <th>Due Date</th>
-                            <th>Completed</th>
-                            <th>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {classAssignments.map((a) => (
-                            <tr key={a.id}>
-                              <td>
-                                <strong>{a.title}</strong>
-                                {(a.domain_filter || a.difficulty_filter) && (
-                                  <div className="tp-row-sub">
-                                    {[a.domain_filter, a.difficulty_filter]
-                                      .filter(Boolean)
-                                      .join(" · ")}
-                                  </div>
-                                )}
-                              </td>
-                              <td>{(a.question_ids || []).length} Qs</td>
-                              <td>
-                                {a.due_at
-                                  ? new Date(a.due_at).toLocaleString(undefined, {
-                                      month: "short",
-                                      day: "numeric",
-                                      hour: "numeric",
-                                      minute: "2-digit",
-                                    })
-                                  : "No deadline"}
-                              </td>
-                              <td>
-                                {a.completed_count} / {a.student_count} students
-                              </td>
-                              <td>
-                                <div className="tp-row-actions">
-                                  <button
-                                    type="button"
-                                    className="tp-btn-sm primary"
-                                    onClick={() => openAnalytics(a.id)}
-                                  >
-                                    Gradebook
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="tp-btn-sm danger"
-                                    onClick={() => handleDeleteAssignment(a.id)}
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
+                  )}
+                </section>
 
-                  {/* Enrolled Students Roster */}
-                  <div className="tp-card">
-                    <div className="tp-sec-head">
-                      Enrolled Students ({classStudents.length})
+                <section className="tp-section">
+                  <div className="tp-sec-label">
+                    Students ({classStudents.length})
+                  </div>
+                  {classStudents.length === 0 ? (
+                    <div className="tp-empty-box">
+                      No students enrolled yet. Share code{" "}
+                      <strong>{currentClass.join_code}</strong> with your students.
                     </div>
-                    {classStudents.length === 0 ? (
-                      <div className="tp-empty">
-                        No students have joined yet. Share code{" "}
-                        <strong>{currentClass.join_code}</strong> with your class.
-                      </div>
-                    ) : (
-                      <table className="tp-table">
+                  ) : (
+                    <div className="tp-roster-card">
+                      <table className="tp-clean-table">
                         <thead>
                           <tr>
                             <th>Student</th>
-                            <th>Status</th>
-                            <th>Homework Completed</th>
-                            <th>Avg Best Score</th>
-                            <th>Total Attempts</th>
+                            <th>Completed</th>
+                            <th>Average Score</th>
+                            <th>Tries</th>
                             <th></th>
                           </tr>
                         </thead>
@@ -564,11 +820,8 @@ export default function TeacherPortal({ onExit }) {
                           {classStudents.map((s) => (
                             <tr key={s.name}>
                               <td>
-                                <strong>{s.name}</strong>
-                              </td>
-                              <td>
                                 <span className={`tp-dot ${s.online ? "on" : ""}`}></span>
-                                {s.online ? "Online" : "Offline"}
+                                <strong>{s.name}</strong>
                               </td>
                               <td>
                                 {s.completedAssignments} / {s.totalAssignments}
@@ -578,521 +831,677 @@ export default function TeacherPortal({ onExit }) {
                               <td style={{ textAlign: "right" }}>
                                 <button
                                   type="button"
-                                  className="tp-btn-sm danger"
+                                  className="tp-icon-del"
+                                  title="Remove student"
                                   onClick={() => handleRemoveStudent(s.name)}
                                 >
-                                  Remove
+                                  ×
                                 </button>
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                    )}
-                  </div>
-                </>
-              )}
-            </section>
-          </div>
-        )}
-
-        {/* TAB 2: CREATE HOMEWORK ASSIGNMENT */}
-        {activeNav === "create" && (
-          <div className="tp-create-wrap">
-            <form className="tp-card tp-create-form" onSubmit={handleCreateAssignment}>
-              <h2 className="tp-h2">Create Homework Assignment</h2>
-
-              <div className="tp-form-grid">
-                <div className="tp-field">
-                  <label>Class</label>
-                  <select
-                    className="tp-select"
-                    value={assignClassId}
-                    onChange={(e) => setAssignClassId(e.target.value)}
-                  >
-                    {classes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.join_code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="tp-field">
-                  <label>Assignment Title</label>
-                  <input
-                    type="text"
-                    className="tp-input"
-                    placeholder="e.g. Week 4 Craft & Structure Practice"
-                    value={assignTitle}
-                    onChange={(e) => setAssignTitle(e.target.value)}
-                  />
-                </div>
-
-                <div className="tp-field">
-                  <label>Due Date (Optional)</label>
-                  <input
-                    type="datetime-local"
-                    className="tp-input"
-                    value={assignDue}
-                    onChange={(e) => setAssignDue(e.target.value)}
-                  />
-                </div>
+                    </div>
+                  )}
+                </section>
               </div>
+            )}
 
-              <div className="tp-field" style={{ marginTop: "16px" }}>
-                <label>Question Selection Method</label>
-                <div className="chall-pick" style={{ maxWidth: "420px" }}>
+            {/* SUBVIEW 2: CREATE NEW ASSIGNMENT */}
+            {subView === "new-assignment" && (
+              <form className="tp-builder-card" onSubmit={handleCreateAssignment}>
+                <div className="tp-builder-row">
+                  <div className="tp-field" style={{ flex: 2 }}>
+                    <label>Assignment Title</label>
+                    <input
+                      type="text"
+                      className="tp-input"
+                      placeholder="e.g. Craft & Structure Practice"
+                      value={assignTitle}
+                      onChange={(e) => setAssignTitle(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="tp-field" style={{ flex: 1 }}>
+                    <label>Due Date (Optional)</label>
+                    <input
+                      type="datetime-local"
+                      className="tp-input"
+                      value={assignDue}
+                      onChange={(e) => setAssignDue(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="hw-seg" style={{ maxWidth: "360px", margin: "18px 0" }}>
                   <button
                     type="button"
                     className={pickMode === "filter" ? "sel" : ""}
                     onClick={() => setPickMode("filter")}
                   >
-                    Auto-Generate by Filter
+                    Auto-Pick
                   </button>
                   <button
                     type="button"
                     className={pickMode === "manual" ? "sel" : ""}
                     onClick={() => setPickMode("manual")}
                   >
-                    Hand-Pick Questions ({selectedQIds.length})
+                    Hand-Pick ({selectedQIds.length})
                   </button>
                 </div>
-              </div>
 
-              {pickMode === "filter" ? (
-                <div className="tp-form-grid" style={{ marginTop: "16px" }}>
-                  <div className="tp-field">
-                    <label>Domain</label>
-                    <select
-                      className="tp-select"
-                      value={filterDomain}
-                      onChange={(e) => setFilterDomain(e.target.value)}
-                    >
-                      <option value="All">All Domains</option>
-                      {DOMAINS.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                {pickMode === "filter" ? (
+                  <div className="tp-auto-pane">
+                    <div className="tp-builder-row">
+                      <div className="tp-field">
+                        <label>Category</label>
+                        <select
+                          className="tp-select"
+                          value={filterDomain}
+                          onChange={(e) => setFilterDomain(e.target.value)}
+                        >
+                          <option value="All">All Categories</option>
+                          {DOMAINS.map((d) => (
+                            <option key={d} value={d}>
+                              {d}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                  <div className="tp-field">
-                    <label>Difficulty</label>
-                    <select
-                      className="tp-select"
-                      value={filterDiff}
-                      onChange={(e) => setFilterDiff(e.target.value)}
-                    >
-                      <option value="All">All Difficulties</option>
-                      {DIFFICULTIES.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                      <div className="tp-field">
+                        <label>Difficulty</label>
+                        <select
+                          className="tp-select"
+                          value={filterDiff}
+                          onChange={(e) => setFilterDiff(e.target.value)}
+                        >
+                          <option value="All">All Difficulties</option>
+                          {DIFFICULTIES.map((d) => (
+                            <option key={d} value={d}>
+                              {d}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
 
-                  <div className="tp-field">
-                    <label>Number of Questions</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={50}
-                      className="tp-input"
-                      value={filterCount}
-                      onChange={(e) => setFilterCount(e.target.value)}
-                    />
+                    <div className="tp-field" style={{ marginTop: "16px" }}>
+                      <label>Number of Questions</label>
+                      <div className="tp-count-row">
+                        <div className="hw-seg" style={{ flex: 1, margin: 0 }}>
+                          {COUNT_PRESETS.map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              className={Number(filterCount) === n ? "sel" : ""}
+                              onClick={() => setFilterCount(n)}
+                            >
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                        <input
+                          type="number"
+                          min={1}
+                          max={50}
+                          className="tp-input tp-count-custom"
+                          value={filterCount}
+                          onChange={(e) => setFilterCount(e.target.value)}
+                        />
+                      </div>
+                      <div className="tp-pool-hint">
+                        {matchingAutoPool.length} matching questions available in bank
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="tp-manual-browser">
-                  <div className="tp-browser-filters">
-                    <input
-                      type="text"
-                      className="tp-input"
-                      placeholder="Search by question text, skill, or ID..."
-                      value={qSearch}
-                      onChange={(e) => {
-                        setQSearch(e.target.value);
-                        setQPage(1);
-                      }}
-                    />
-                    <select
-                      className="tp-select"
-                      value={qDomain}
-                      onChange={(e) => {
-                        setQDomain(e.target.value);
-                        setQPage(1);
-                      }}
-                    >
-                      <option value="All">All Domains</option>
-                      {DOMAINS.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      className="tp-select"
-                      value={qDiff}
-                      onChange={(e) => {
-                        setQDiff(e.target.value);
-                        setQPage(1);
-                      }}
-                    >
-                      <option value="All">All Difficulties</option>
-                      {DIFFICULTIES.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                ) : (
+                  <div className="tp-manual-pane">
+                    <div className="tp-browser-filters">
+                      <input
+                        type="text"
+                        className="tp-input"
+                        placeholder="Search by keyword, skill, or ID..."
+                        value={qSearch}
+                        onChange={(e) => {
+                          setQSearch(e.target.value);
+                          setQPage(1);
+                        }}
+                      />
+                      <select
+                        className="tp-select"
+                        value={qDomain}
+                        onChange={(e) => {
+                          setQDomain(e.target.value);
+                          setQPage(1);
+                        }}
+                      >
+                        <option value="All">All Categories</option>
+                        {DOMAINS.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        className="tp-select"
+                        value={qDiff}
+                        onChange={(e) => {
+                          setQDiff(e.target.value);
+                          setQPage(1);
+                        }}
+                      >
+                        <option value="All">All Difficulties</option>
+                        {DIFFICULTIES.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                  {selectedQIds.length > 0 && (
-                    <div className="tp-selected-bar">
+                    {selectedQIds.length > 0 && (
+                      <div className="tp-selected-bar">
+                        <span>
+                          <strong>{selectedQIds.length}</strong> selected
+                        </span>
+                        <button
+                          type="button"
+                          className="tp-pill-btn"
+                          onClick={() => setSelectedQIds([])}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="tp-q-list">
+                      {currentManualSlice.length === 0 ? (
+                        <div className="tp-empty-box">No matching questions found.</div>
+                      ) : (
+                        currentManualSlice.map((q) => {
+                          const checked = selectedQIds.includes(q.id);
+                          const expanded = expandedQId === q.id;
+                          return (
+                            <div
+                              key={q.id}
+                              className={`tp-q-item ${checked ? "checked" : ""}`}
+                            >
+                              <div className="tp-q-row">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleSelectQ(q.id)}
+                                />
+                                <div
+                                  className="tp-q-main"
+                                  onClick={() => toggleSelectQ(q.id)}
+                                >
+                                  <div className="tp-q-meta">
+                                    <span className="tp-q-id">{q.id}</span>
+                                    <span>{q.domain}</span>
+                                    <span>· {q.skill}</span>
+                                    <span className="tp-dif-tag">{q.difficulty}</span>
+                                  </div>
+                                  <div className="tp-q-snippet">
+                                    {(q.question || "").slice(0, 175)}
+                                    {(q.question || "").length > 175 ? "..." : ""}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="tp-pill-btn"
+                                  onClick={() =>
+                                    setExpandedQId(expanded ? null : q.id)
+                                  }
+                                >
+                                  {expanded ? "Hide" : "Show"}
+                                </button>
+                              </div>
+
+                              {expanded && (
+                                <div className="tp-q-preview">
+                                  <div className="tp-q-fulltext">{q.question}</div>
+                                  {q.choices && (
+                                    <div className="tp-q-choices">
+                                      {["A", "B", "C", "D"].map((k) => (
+                                        <div
+                                          key={k}
+                                          className={`tp-q-choice ${
+                                            q.correct === k ? "correct" : ""
+                                          }`}
+                                        >
+                                          <strong>{k}.</strong> {q.choices[k]}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <div className="tp-pagination">
+                      <button
+                        type="button"
+                        className="tp-pill-btn"
+                        disabled={qPage <= 1}
+                        onClick={() => setQPage((p) => Math.max(1, p - 1))}
+                      >
+                        Prev
+                      </button>
                       <span>
-                        Selected: <strong>{selectedQIds.length}</strong> questions
+                        Page {qPage} of {totalManualPages} ({filteredManualQuestions.length})
                       </span>
                       <button
                         type="button"
-                        className="tp-btn-sm"
-                        onClick={() => setSelectedQIds([])}
+                        className="tp-pill-btn"
+                        disabled={qPage >= totalManualPages}
+                        onClick={() => setQPage((p) => p + 1)}
                       >
-                        Clear Selection
+                        Next
                       </button>
-                    </div>
-                  )}
-
-                  <div className="tp-q-list">
-                    {qLoading ? (
-                      <div className="tp-empty">Loading questions...</div>
-                    ) : qData.questions.length === 0 ? (
-                      <div className="tp-empty">No matching questions found.</div>
-                    ) : (
-                      qData.questions.map((q) => {
-                        const checked = selectedQIds.includes(q.id);
-                        const expanded = expandedQId === q.id;
-                        return (
-                          <div
-                            key={q.id}
-                            className={`tp-q-item ${checked ? "checked" : ""}`}
-                          >
-                            <div className="tp-q-row">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleSelectQ(q.id)}
-                              />
-                              <div
-                                className="tp-q-main"
-                                onClick={() => toggleSelectQ(q.id)}
-                              >
-                                <div className="tp-q-meta">
-                                  <span className="tp-q-id">{q.id}</span>
-                                  <span>{q.domain}</span>
-                                  <span>· {q.skill}</span>
-                                  <span className={`tp-dif-tag ${q.difficulty}`}>
-                                    {q.difficulty}
-                                  </span>
-                                </div>
-                                <div className="tp-q-snippet">
-                                  {(q.question || "").slice(0, 180)}
-                                  {(q.question || "").length > 180 ? "..." : ""}
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                className="tp-btn-sm"
-                                onClick={() =>
-                                  setExpandedQId(expanded ? null : q.id)
-                                }
-                              >
-                                {expanded ? "Hide" : "Preview"}
-                              </button>
-                            </div>
-
-                            {expanded && (
-                              <div className="tp-q-preview">
-                                <div className="tp-q-fulltext">{q.question}</div>
-                                {q.choices && (
-                                  <div className="tp-q-choices">
-                                    {["A", "B", "C", "D"].map((k) => (
-                                      <div
-                                        key={k}
-                                        className={`tp-q-choice ${
-                                          q.correct === k ? "correct" : ""
-                                        }`}
-                                      >
-                                        <strong>{k}.</strong> {q.choices[k]}
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                                {q.rationale && (
-                                  <div className="tp-q-rat">
-                                    <strong>Rationale (Answer {q.correct}):</strong>{" "}
-                                    {q.rationale}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  <div className="tp-pagination">
-                    <button
-                      type="button"
-                      className="tp-btn-sm"
-                      disabled={qPage <= 1}
-                      onClick={() => setQPage((p) => Math.max(1, p - 1))}
-                    >
-                      Previous
-                    </button>
-                    <span>
-                      Page {qPage} of {qData.totalPages} ({qData.total} questions)
-                    </span>
-                    <button
-                      type="button"
-                      className="tp-btn-sm"
-                      disabled={qPage >= qData.totalPages}
-                      onClick={() => setQPage((p) => p + 1)}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {createMsg && (
-                <div className={`hw-status-msg ${createMsg.ok ? "ok" : "err"}`}>
-                  {createMsg.text}
-                </div>
-              )}
-
-              <div className="tp-form-footer">
-                <button type="submit" className="btn-blue">
-                  Publish Homework Assignment
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* TAB 3: GRADEBOOK & ANALYTICS */}
-        {activeNav === "gradebook" && (
-          <div className="tp-gradebook-wrap">
-            <div className="tp-card tp-gb-bar">
-              <div className="tp-field" style={{ flex: 1 }}>
-                <label>Select Assignment</label>
-                <select
-                  className="tp-select"
-                  value={analyticsAssignmentId}
-                  onChange={(e) => openAnalytics(e.target.value)}
-                >
-                  <option value="">-- Choose an assignment --</option>
-                  {classAssignments.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.class_name}: {a.title} ({(a.question_ids || []).length} Qs)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {analyticsData && (
-                <div className="chall-pick" style={{ width: "340px" }}>
-                  <button
-                    type="button"
-                    className={analyticsTab === "students" ? "sel" : ""}
-                    onClick={() => setAnalyticsTab("students")}
-                  >
-                    Student Scores
-                  </button>
-                  <button
-                    type="button"
-                    className={analyticsTab === "questions" ? "sel" : ""}
-                    onClick={() => setAnalyticsTab("questions")}
-                  >
-                    Question Accuracy
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {analyticsLoading ? (
-              <div className="tp-card tp-empty">Loading gradebook...</div>
-            ) : !analyticsData ? (
-              <div className="tp-card tp-empty">
-                Select an assignment above to inspect student results and question accuracy.
-              </div>
-            ) : analyticsTab === "students" ? (
-              <div className="tp-card">
-                <div className="tp-sec-head">
-                  {analyticsData.assignment.title} — Student Results
-                </div>
-                <table className="tp-table">
-                  <thead>
-                    <tr>
-                      <th>Student</th>
-                      <th>Status</th>
-                      <th>Best Score</th>
-                      <th>First Attempt</th>
-                      <th>Latest Score</th>
-                      <th>Attempts</th>
-                      <th>Last Submitted</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {analyticsData.students.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="tp-empty">
-                          No students enrolled in this class yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      analyticsData.students.map((st) => (
-                        <tr key={st.name}>
-                          <td>
-                            <strong>{st.name}</strong>
-                          </td>
-                          <td>
-                            {!st.completed ? (
-                              <span className="tp-status pending">Not Submitted</span>
-                            ) : st.isLate ? (
-                              <span className="tp-status late">Completed (Late)</span>
-                            ) : (
-                              <span className="tp-status ok">Completed</span>
-                            )}
-                          </td>
-                          <td>
-                            {st.completed ? (
-                              <strong>
-                                {st.bestScore} / {st.total} ({st.bestPct}%)
-                              </strong>
-                            ) : (
-                              "–"
-                            )}
-                          </td>
-                          <td>
-                            {st.completed ? `${st.firstScore} / ${st.total}` : "–"}
-                          </td>
-                          <td>
-                            {st.completed ? `${st.latestScore} / ${st.total}` : "–"}
-                          </td>
-                          <td>{st.attemptsCount}</td>
-                          <td>
-                            {st.lastSubmittedAt
-                              ? new Date(st.lastSubmittedAt).toLocaleString(undefined, {
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "numeric",
-                                  minute: "2-digit",
-                                })
-                              : "–"}
-                          </td>
-                          <td style={{ textAlign: "right" }}>
-                            {st.completed && (
-                              <button
-                                type="button"
-                                className="tp-btn-sm"
-                                onClick={() =>
-                                  setInspectStudent(
-                                    inspectStudent?.name === st.name ? null : st
-                                  )
-                                }
-                              >
-                                {inspectStudent?.name === st.name ? "Close" : "Inspect"}
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-
-                {inspectStudent && (
-                  <div className="tp-student-inspect">
-                    <div className="tp-sec-head">
-                      {inspectStudent.name} — Question Answers (Best Attempt)
-                    </div>
-                    <div className="hw-sum-grid">
-                      {analyticsData.questions.map((q) => {
-                        const ans = (inspectStudent.bestAnswers || {})[q.id];
-                        const isOk = ans && ans === q.correct;
-                        return (
-                          <div
-                            key={q.id}
-                            className={`hw-q-pill ${
-                              isOk ? "ok" : ans ? "bad" : "skip"
-                            }`}
-                          >
-                            <span>Q{q.index}</span>
-                            <small>
-                              {ans || "–"} (Ans: {q.correct})
-                            </small>
-                          </div>
-                        );
-                      })}
                     </div>
                   </div>
                 )}
-              </div>
-            ) : (
-              <div className="tp-card">
-                <div className="tp-sec-head">
-                  {analyticsData.assignment.title} — Per-Question Accuracy Breakdown
+
+                {createMsg && (
+                  <div className={`hw-status-msg ${createMsg.ok ? "ok" : "err"}`}>
+                    {createMsg.text}
+                  </div>
+                )}
+
+                <div className="tp-builder-footer">
+                  <button
+                    type="button"
+                    className="hw-action-btn ghost"
+                    onClick={() => setSubView("overview")}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="hw-action-btn primary"
+                    disabled={creatingAssign}
+                  >
+                    {creatingAssign ? "Creating..." : "Create Assignment"}
+                  </button>
                 </div>
-                <table className="tp-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Question ID</th>
-                      <th>Domain & Skill</th>
-                      <th>Difficulty</th>
-                      <th>Correct</th>
-                      <th>Class Accuracy</th>
-                      <th>Choice Distribution (A / B / C / D)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {analyticsData.questions.map((q) => (
-                      <tr key={q.id}>
-                        <td>{q.index}</td>
-                        <td>
-                          <code>{q.id}</code>
-                        </td>
-                        <td>
-                          <div>{q.domain}</div>
-                          <div className="tp-row-sub">{q.skill}</div>
-                        </td>
-                        <td>{q.difficulty}</td>
-                        <td>
-                          <strong>{q.correct}</strong>
-                        </td>
-                        <td>
-                          {q.accuracy !== null ? (
-                            <strong>
-                              {q.accuracy}% ({q.correctCount}/{q.attempted})
-                            </strong>
-                          ) : (
-                            "No attempts"
-                          )}
-                        </td>
-                        <td>
-                          A: {q.choiceCounts.A} · B: {q.choiceCounts.B} · C:{" "}
-                          {q.choiceCounts.C} · D: {q.choiceCounts.D}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              </form>
+            )}
+
+            {/* SUBVIEW 3: DETAILED GRADEBOOK & QUESTION ANALYSIS */}
+            {subView === "gradebook" && (
+              <div className="tp-gradebook-card">
+                {analyticsLoading || !analyticsData ? (
+                  <div className="tp-empty-box">Loading analysis...</div>
+                ) : (
+                  <>
+                    <div className="tp-gb-head">
+                      <div>
+                        <h2 className="tp-gb-title">{analyticsData.assignment.title}</h2>
+                        <div className="tp-assign-sub">
+                          {(analyticsData.assignment.question_ids || []).length} questions
+                        </div>
+                      </div>
+                      <div className="hw-seg" style={{ width: "280px", margin: 0 }}>
+                        <button
+                          type="button"
+                          className={analyticsTab === "questions" ? "sel" : ""}
+                          onClick={() => setAnalyticsTab("questions")}
+                        >
+                          Questions
+                        </button>
+                        <button
+                          type="button"
+                          className={analyticsTab === "students" ? "sel" : ""}
+                          onClick={() => setAnalyticsTab("students")}
+                        >
+                          Students
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Top KPI Strip */}
+                    {analyticsKpis && (
+                      <div className="tp-kpi-grid">
+                        <div className="tp-kpi-box">
+                          <div className="tp-kpi-label">Completion</div>
+                          <div className="tp-kpi-val">
+                            {analyticsKpis.completedCount} / {analyticsKpis.totalStudents}
+                          </div>
+                          <div className="tp-kpi-sub">students submitted</div>
+                        </div>
+
+                        <div className="tp-kpi-box">
+                          <div className="tp-kpi-label">Class Average</div>
+                          <div className="tp-kpi-val">
+                            {analyticsKpis.avgBestPct !== null
+                              ? `${analyticsKpis.avgBestPct}%`
+                              : "–"}
+                          </div>
+                          <div className="tp-kpi-sub">
+                            {analyticsKpis.avgFirstPct !== null
+                              ? `First try avg: ${analyticsKpis.avgFirstPct}%`
+                              : "No submissions yet"}
+                          </div>
+                        </div>
+
+                        <div className="tp-kpi-box">
+                          <div className="tp-kpi-label">Hardest Question</div>
+                          <div className="tp-kpi-val">
+                            {analyticsKpis.hardestQ
+                              ? `Q${analyticsKpis.hardestQ.index} (${analyticsKpis.hardestQ.accuracy}%)`
+                              : "–"}
+                          </div>
+                          <div className="tp-kpi-sub">
+                            {analyticsKpis.hardestQ
+                              ? analyticsKpis.hardestQ.skill || analyticsKpis.hardestQ.domain
+                              : "Awaiting attempts"}
+                          </div>
+                        </div>
+
+                        <div className="tp-kpi-box">
+                          <div className="tp-kpi-label">Weakest Skill</div>
+                          <div className="tp-kpi-val" style={{ fontSize: "15px" }}>
+                            {analyticsKpis.weakestSkill
+                              ? analyticsKpis.weakestSkill.skill
+                              : "–"}
+                          </div>
+                          <div className="tp-kpi-sub">
+                            {analyticsKpis.weakestSkill
+                              ? `${analyticsKpis.weakestSkill.pct}% accuracy`
+                              : "Awaiting attempts"}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {analyticsTab === "questions" ? (
+                      <div className="tp-qa-section">
+                        {/* Sort Bar */}
+                        <div className="tp-qa-toolbar">
+                          <span className="tp-sec-label" style={{ margin: 0 }}>
+                            Question Breakdown
+                          </span>
+                          <div className="tp-sort-pills">
+                            <button
+                              type="button"
+                              className={`tp-sort-btn ${qSort === "order" ? "on" : ""}`}
+                              onClick={() => setQSort("order")}
+                            >
+                              In Order
+                            </button>
+                            <button
+                              type="button"
+                              className={`tp-sort-btn ${qSort === "hardest" ? "on" : ""}`}
+                              onClick={() => setQSort("hardest")}
+                            >
+                              Hardest First
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="tp-qa-list">
+                          {sortedAnalyticsQuestions.map((q) => {
+                            const isOpen = expandedAnalyticsQId === q.id;
+                            const accColor =
+                              q.accuracy === null
+                                ? "neutral"
+                                : q.accuracy >= 75
+                                ? "good"
+                                : q.accuracy >= 50
+                                ? "mid"
+                                : "low";
+
+                            return (
+                              <div
+                                key={q.id}
+                                className={`tp-qa-card ${isOpen ? "open" : ""}`}
+                              >
+                                <div
+                                  className="tp-qa-summary"
+                                  onClick={() =>
+                                    setExpandedAnalyticsQId(isOpen ? null : q.id)
+                                  }
+                                >
+                                  <div className="tp-qa-num">{q.index}</div>
+
+                                  <div className="tp-qa-main">
+                                    <div className="tp-qa-tags">
+                                      <span className="tp-qa-domain">{q.domain}</span>
+                                      {q.skill && <span>· {q.skill}</span>}
+                                      {q.difficulty && (
+                                        <span className="tp-dif-tag">{q.difficulty}</span>
+                                      )}
+                                      {q.trapChoice && (
+                                        <span className="tp-trap-tag">
+                                          Common wrong: {q.trapChoice.letter} ({q.trapChoice.count})
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="tp-qa-snippet">
+                                      {q.question
+                                        ? q.question.length > 155
+                                          ? q.question.slice(0, 155) + "..."
+                                          : q.question
+                                        : `Question ${q.id}`}
+                                    </div>
+                                  </div>
+
+                                  <div className="tp-qa-right">
+                                    <div className="tp-qa-acc-col">
+                                      <div className={`tp-qa-acc-val ${accColor}`}>
+                                        {q.accuracy !== null ? `${q.accuracy}%` : "No tries"}
+                                      </div>
+                                      <div className="tp-qa-acc-sub">
+                                        {q.attempted > 0
+                                          ? `${q.correctCount}/${q.attempted} correct`
+                                          : `Ans: ${q.correct || "–"}`}
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      className="tp-pill-btn"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setExpandedAnalyticsQId(isOpen ? null : q.id);
+                                      }}
+                                    >
+                                      {isOpen ? "Hide" : "Show"}
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {isOpen && (
+                                  <div className="tp-qa-detail">
+                                    <div className="tp-q-fulltext">{q.question}</div>
+
+                                    <div className="tp-qa-choices">
+                                      {["A", "B", "C", "D"].map((letter) => {
+                                        const isCorrect =
+                                          String(q.correct).toUpperCase() === letter;
+                                        const count = q.choiceCounts[letter] || 0;
+                                        const pct =
+                                          q.attempted > 0
+                                            ? Math.round((count / q.attempted) * 100)
+                                            : 0;
+                                        const studentsWhoPicked =
+                                          q.pickedBy[letter] || [];
+
+                                        return (
+                                          <div
+                                            key={letter}
+                                            className={`tp-qa-choice-row ${
+                                              isCorrect
+                                                ? "correct"
+                                                : count > 0
+                                                ? "wrong-picked"
+                                                : ""
+                                            }`}
+                                          >
+                                            <div className="tp-qa-choice-top">
+                                              <div className="tp-qa-choice-text">
+                                                <span className="tp-qa-letter">
+                                                  {letter}
+                                                </span>
+                                                <span>
+                                                  {(q.choices && q.choices[letter]) || ""}
+                                                </span>
+                                              </div>
+                                              <div className="tp-qa-choice-stat">
+                                                {isCorrect && (
+                                                  <span className="tp-correct-pill">
+                                                    Correct
+                                                  </span>
+                                                )}
+                                                <strong>{pct}%</strong>
+                                                <span>({count})</span>
+                                              </div>
+                                            </div>
+
+                                            {/* Choice distribution bar */}
+                                            <div className="tp-qa-bar-track">
+                                              <div
+                                                className="tp-qa-bar-fill"
+                                                style={{ width: `${pct}%` }}
+                                              ></div>
+                                            </div>
+
+                                            {/* Show exact students who picked this option */}
+                                            {studentsWhoPicked.length > 0 && (
+                                              <div className="tp-qa-picked-names">
+                                                Picked by: {studentsWhoPicked.join(", ")}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+
+                                    {q.rationale && (
+                                      <div className="tp-qa-rationale">
+                                        <strong>Explanation:</strong> {q.rationale}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <table className="tp-clean-table">
+                          <thead>
+                            <tr>
+                              <th>Student</th>
+                              <th>Status</th>
+                              <th>Best Score</th>
+                              <th>First Try</th>
+                              <th>Tries</th>
+                              <th></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {enrichedStudents.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="tp-empty-box">
+                                  No students in this class yet.
+                                </td>
+                              </tr>
+                            ) : (
+                              enrichedStudents.map((st) => (
+                                <tr key={st.name}>
+                                  <td>
+                                    <strong>{st.name}</strong>
+                                  </td>
+                                  <td>
+                                    {!st.completed ? (
+                                      <span className="tp-badge pending">Pending</span>
+                                    ) : st.isLate ? (
+                                      <span className="tp-badge late">Late</span>
+                                    ) : (
+                                      <span className="tp-badge ok">Completed</span>
+                                    )}
+                                  </td>
+                                  <td>
+                                    {st.completed ? (
+                                      <strong>
+                                        {st.bestScore}/{st.total} ({st.bestPct}%)
+                                      </strong>
+                                    ) : (
+                                      "–"
+                                    )}
+                                  </td>
+                                  <td>
+                                    {st.completed ? `${st.firstScore}/${st.total}` : "–"}
+                                  </td>
+                                  <td>{st.attemptsCount || "–"}</td>
+                                  <td style={{ textAlign: "right" }}>
+                                    {st.completed && (
+                                      <button
+                                        type="button"
+                                        className="tp-pill-btn"
+                                        onClick={() =>
+                                          setInspectStudent(
+                                            inspectStudent?.name === st.name ? null : st
+                                          )
+                                        }
+                                      >
+                                        {inspectStudent?.name === st.name
+                                          ? "Hide"
+                                          : "Answers"}
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+
+                        {inspectStudent && (
+                          <div className="tp-student-inspect">
+                            <div className="tp-sec-label">
+                              {inspectStudent.name} — Question Breakdown (Click any question to view)
+                            </div>
+                            <div className="hw-sum-grid">
+                              {enrichedAnalyticsQuestions.map((q) => {
+                                const ans = (inspectStudent.bestAnswers || {})[q.id];
+                                const isOk = ans && ans === q.correct;
+                                return (
+                                  <button
+                                    key={q.id}
+                                    type="button"
+                                    className={`hw-q-pill ${
+                                      isOk ? "ok" : ans ? "bad" : "skip"
+                                    }`}
+                                    onClick={() => {
+                                      setAnalyticsTab("questions");
+                                      setExpandedAnalyticsQId(q.id);
+                                    }}
+                                  >
+                                    <span>Q{q.index}</span>
+                                    <small>
+                                      {ans || "–"} ({q.correct})
+                                    </small>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -1101,4 +1510,3 @@ export default function TeacherPortal({ onExit }) {
     </div>
   );
 }
-

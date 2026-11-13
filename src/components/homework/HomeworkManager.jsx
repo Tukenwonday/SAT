@@ -1,21 +1,23 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { getStudentIdentity, hwFetch } from "../../utils/homeworkApi";
 
-export default function HomeworkManager({ onOpenTeacher }) {
+export default function HomeworkManager() {
   const [modalOpen, setModalOpen] = useState(false);
-  const [tab, setTab] = useState("active"); // "active" | "completed"
   const [classes, setClasses] = useState([]);
   const [assignments, setAssignments] = useState([]);
+  const [selectedClassId, setSelectedClassId] = useState(null); // null = Classes list, string = inside Class
+  const [showJoinForm, setShowJoinForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [joinCode, setJoinCode] = useState("");
-  const [joinStatus, setJoinStatus] = useState(null); // { ok: boolean, msg: string }
-  const [activeHw, setActiveHw] = useState(null); // currently practicing assignment object
+  const [joinStatus, setJoinStatus] = useState(null);
+  const [activeHw, setActiveHw] = useState(null);
   const [answeredCount, setAnsweredCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [summaryModal, setSummaryModal] = useState(null); // { assignment, summary, results }
+  const [summaryModal, setSummaryModal] = useState(null);
 
   const activeHwRef = useRef(null);
   activeHwRef.current = activeHw;
+  const sessionAnswersRef = useRef({});
 
   const updateTopBadge = useCallback((list) => {
     const badge = document.getElementById("hw-badge");
@@ -29,68 +31,101 @@ export default function HomeworkManager({ onOpenTeacher }) {
     }
   }, []);
 
-  const loadHomework = useCallback(async (silent = false) => {
-    const { name, pin } = getStudentIdentity();
-    if (!name || !pin) {
-      setClasses([]);
-      setAssignments([]);
-      updateTopBadge([]);
-      return;
-    }
-    if (!silent) setLoading(true);
-    const res = await hwFetch(
-      `/api/student/homework?name=${encodeURIComponent(name)}&pin=${encodeURIComponent(pin)}`
-    );
-    if (!silent) setLoading(false);
-    if (res && res.ok) {
-      setClasses(res.classes || []);
-      setAssignments(res.assignments || []);
-      updateTopBadge(res.assignments || []);
-    }
-  }, [updateTopBadge]);
+  const loadHomework = useCallback(
+    async (silent = false) => {
+      const { name, pin } = getStudentIdentity();
+      if (!name || !pin) {
+        setClasses([]);
+        setAssignments([]);
+        updateTopBadge([]);
+        return;
+      }
+      if (!silent) setLoading(true);
+      const res = await hwFetch(
+        `/api/student/homework?name=${encodeURIComponent(name)}&pin=${encodeURIComponent(pin)}`
+      );
+      if (!silent) setLoading(false);
+      if (res && res.ok) {
+        const clsList = res.classes || [];
+        const db = (window.App && window.App.DB) || [];
+        const dbById = {};
+        for (const q of db) {
+          if (q && q.id) dbById[q.id] = q;
+        }
+
+        const asgList = (res.assignments || []).map((a) => {
+          if (!a.completed) return a;
+          const latestAns =
+            typeof a.latestAnswers === "string"
+              ? (() => {
+                  try {
+                    return JSON.parse(a.latestAnswers) || {};
+                  } catch (e) {
+                    return {};
+                  }
+                })()
+              : a.latestAnswers || {};
+          let localScore = 0;
+          for (const qid of a.questionIds || []) {
+            const pick = String(latestAns[qid] || "").trim().toUpperCase();
+            const corr =
+              dbById[qid] && dbById[qid].correct
+                ? String(dbById[qid].correct).trim().toUpperCase()
+                : "";
+            if (pick && corr && pick === corr) localScore++;
+          }
+          return {
+            ...a,
+            bestScore: Math.max(a.bestScore || 0, localScore),
+            latestScore: Math.max(a.latestScore || 0, localScore),
+          };
+        });
+
+        setClasses(clsList);
+        setAssignments(asgList);
+        updateTopBadge(asgList);
+      }
+    },
+    [updateTopBadge]
+  );
 
   const computeAnsweredCount = useCallback((hw) => {
-    if (!hw || !window.App || !window.App.S) return 0;
-    const ans = window.App.S.answers || {};
+    if (!hw) return 0;
+    const appAns = (window.App && window.App.S && window.App.S.answers) || {};
+    const sessAns = sessionAnswersRef.current || {};
     let c = 0;
     for (const qid of hw.questionIds || []) {
-      if (ans[qid]) c++;
+      if (sessAns[qid] || appAns[qid]) c++;
     }
     return c;
   }, []);
 
-  // Wire topbar #homeworkbtn and #mm-teacher
   useEffect(() => {
     const btn = document.getElementById("homeworkbtn");
-    const mmTeacher = document.getElementById("mm-teacher");
 
     const handleOpen = () => {
       setJoinStatus(null);
+      setShowJoinForm(false);
+      setSelectedClassId(null);
       setModalOpen(true);
       loadHomework(false);
     };
 
-    const handleTeacher = () => {
-      const mm = document.getElementById("moreMenu");
-      if (mm) mm.classList.remove("open");
-      if (onOpenTeacher) onOpenTeacher();
-    };
-
     if (btn) btn.addEventListener("click", handleOpen);
-    if (mmTeacher) mmTeacher.addEventListener("click", handleTeacher);
 
-    // Initial fetch + periodic refresh
     const t0 = setTimeout(() => loadHomework(true), 1200);
     const iv = setInterval(() => loadHomework(true), 20000);
 
-    // Listen to answer events from examEngine
-    const onAnswer = () => {
+    const onAnswer = (ev) => {
+      if (ev && ev.detail && ev.detail.qid && ev.detail.selected) {
+        sessionAnswersRef.current[ev.detail.qid] = ev.detail.selected;
+      }
       if (activeHwRef.current) {
         const cnt = computeAnsweredCount(activeHwRef.current);
         setAnsweredCount(cnt);
         if (window.App && window.App.banner) {
           window.App.banner(
-            `HOMEWORK: ${activeHwRef.current.title.toUpperCase()} (${cnt}/${activeHwRef.current.total})`
+            `HOMEWORK · ${activeHwRef.current.title.toUpperCase()} (${cnt}/${activeHwRef.current.total})`
           );
         }
       }
@@ -99,14 +134,12 @@ export default function HomeworkManager({ onOpenTeacher }) {
 
     return () => {
       if (btn) btn.removeEventListener("click", handleOpen);
-      if (mmTeacher) mmTeacher.removeEventListener("click", handleTeacher);
       clearTimeout(t0);
       clearInterval(iv);
       window.removeEventListener("satbank:answer", onAnswer);
     };
-  }, [loadHomework, computeAnsweredCount, onOpenTeacher]);
+  }, [loadHomework, computeAnsweredCount]);
 
-  // Listen for real-time socket homework updates if Net.socket is connected
   useEffect(() => {
     const iv = setInterval(() => {
       const sock = window.Net && window.Net.socket;
@@ -139,8 +172,12 @@ export default function HomeworkManager({ onOpenTeacher }) {
 
     if (res && res.ok) {
       setJoinCode("");
-      setJoinStatus({ ok: true, msg: `Joined ${res.class.name}` });
-      loadHomework(false);
+      setShowJoinForm(false);
+      setJoinStatus(null);
+      await loadHomework(false);
+      if (res.class && res.class.id) {
+        setSelectedClassId(res.class.id);
+      }
     } else {
       const errMap = {
         "invalid-join-code": "Class code not found.",
@@ -154,23 +191,12 @@ export default function HomeworkManager({ onOpenTeacher }) {
     }
   };
 
-  const handleLeaveClass = async (classId) => {
-    const { name, pin } = getStudentIdentity();
-    if (!name || !pin) return;
-    await hwFetch("/api/student/classes/leave", {
-      method: "POST",
-      body: { name, pin, class_id: classId },
-    });
-    loadHomework(false);
-  };
-
   const startHomeworkSession = (assignment, clearExistingAnswers = true) => {
     if (!window.App || !Array.isArray(window.App.DB)) return;
     const db = window.App.DB;
     const qidSet = new Set(assignment.questionIds || []);
     const idxs = [];
 
-    // Preserve exact order of assignment.questionIds
     const idToIdx = {};
     db.forEach((q, idx) => {
       if (q && qidSet.has(q.id)) idToIdx[q.id] = idx;
@@ -184,6 +210,7 @@ export default function HomeworkManager({ onOpenTeacher }) {
       return;
     }
 
+    sessionAnswersRef.current = {};
     if (clearExistingAnswers && window.App.S && window.App.S.answers) {
       for (const qid of assignment.questionIds || []) {
         delete window.App.S.answers[qid];
@@ -199,12 +226,13 @@ export default function HomeworkManager({ onOpenTeacher }) {
     const cnt = computeAnsweredCount(assignment);
     setAnsweredCount(cnt);
     if (window.App.banner) {
-      window.App.banner(`HOMEWORK: ${assignment.title.toUpperCase()} (${cnt}/${assignment.total})`);
+      window.App.banner(`HOMEWORK · ${assignment.title.toUpperCase()} (${cnt}/${assignment.total})`);
     }
     if (window.App.renderQ) window.App.renderQ();
   };
 
   const exitHomeworkSession = () => {
+    sessionAnswersRef.current = {};
     setActiveHw(null);
     setSummaryModal(null);
     if (window.App) {
@@ -223,23 +251,59 @@ export default function HomeworkManager({ onOpenTeacher }) {
     }
 
     const allAnswers = (window.App && window.App.S && window.App.S.answers) || {};
+    const sessAnswers = sessionAnswersRef.current || {};
+    const db = (window.App && window.App.DB) || [];
+    const dbById = {};
+    for (const q of db) {
+      if (q && q.id) dbById[q.id] = q;
+    }
+
     const hwAnswers = {};
+    const correctMap = {};
+    const localResults = {};
+    let localScore = 0;
+
     for (const qid of activeHw.questionIds || []) {
-      if (allAnswers[qid]) hwAnswers[qid] = allAnswers[qid];
+      const picked = String(sessAnswers[qid] || allAnswers[qid] || "")
+        .trim()
+        .toUpperCase();
+      if (picked && ["A", "B", "C", "D"].includes(picked)) {
+        hwAnswers[qid] = picked;
+      }
+      const corr =
+        dbById[qid] && dbById[qid].correct
+          ? String(dbById[qid].correct).trim().toUpperCase()
+          : "";
+      if (corr) correctMap[qid] = corr;
+      const isCorrect = Boolean(picked && corr && picked === corr);
+      if (isCorrect) localScore++;
+      localResults[qid] = {
+        selected: picked || null,
+        correct: corr || null,
+        isCorrect,
+      };
     }
 
     setSubmitting(true);
     const res = await hwFetch(`/api/student/homework/${encodeURIComponent(activeHw.id)}/submit`, {
       method: "POST",
-      body: { name, pin, answers: hwAnswers },
+      body: { name, pin, answers: hwAnswers, correct_map: correctMap },
     });
     setSubmitting(false);
 
     if (res && res.ok) {
+      const srvSummary = res.summary || {};
+      const finalScore = Math.max(srvSummary.score || 0, localScore);
+      const finalBest = Math.max(srvSummary.bestScore || 0, activeHw.bestScore || 0, finalScore);
       setSummaryModal({
         assignment: activeHw,
-        summary: res.summary,
-        results: res.results || {},
+        summary: {
+          ...srvSummary,
+          score: finalScore,
+          total: activeHw.total || (activeHw.questionIds || []).length,
+          bestScore: finalBest,
+        },
+        results: localResults,
       });
       loadHomework(true);
     } else {
@@ -247,33 +311,55 @@ export default function HomeworkManager({ onOpenTeacher }) {
     }
   };
 
-  const activeList = assignments.filter((a) => !a.completed);
-  const completedList = assignments.filter((a) => a.completed);
   const hasIdentity = Boolean(getStudentIdentity().name && getStudentIdentity().pin);
+  const selectedClass = classes.find((c) => c.id === selectedClassId) || null;
+  const classHomeworks = selectedClass
+    ? assignments.filter((a) => a.classId === selectedClass.id)
+    : [];
 
-  const formatDue = (dueAt) => {
-    if (!dueAt) return null;
-    const d = new Date(dueAt);
-    const isPast = new Date() > d;
-    const str = d.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-    return { str, isPast };
+  const getStatusInfo = (a) => {
+    const now = new Date();
+    const due = a.dueAt ? new Date(a.dueAt) : null;
+    const isPastDue = due ? now > due : false;
+    const dueStr = due
+      ? due.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+      : null;
+
+    if (a.completed) {
+      const pct = a.total > 0 ? Math.round((a.bestScore / a.total) * 100) : 0;
+      return {
+        type: "completed",
+        badge: a.isLate ? "Completed Late" : "Completed",
+        scoreText: `${a.bestScore}/${a.total} (${pct}%)`,
+        dueStr,
+      };
+    }
+    if (isPastDue) {
+      return {
+        type: "overdue",
+        badge: "Deadline Passed",
+        scoreText: null,
+        dueStr,
+      };
+    }
+    return {
+      type: "pending",
+      badge: dueStr ? `Due ${dueStr}` : "Assigned",
+      scoreText: null,
+      dueStr,
+    };
   };
 
   return (
     <>
-      {/* Floating Homework Bar when actively practicing an assignment */}
+      {/* Sleek Bottom Pill when Practicing Homework */}
       {activeHw && (
         <div className="hw-active-bar">
           <div className="hw-active-info">
-            <span className="hw-active-tag">HOMEWORK</span>
+            <span className="hw-active-dot"></span>
             <span className="hw-active-title">{activeHw.title}</span>
             <span className="hw-active-progress">
-              {answeredCount} / {activeHw.total} Answered
+              {answeredCount}/{activeHw.total}
             </span>
           </div>
           <div className="hw-active-actions">
@@ -283,7 +369,7 @@ export default function HomeworkManager({ onOpenTeacher }) {
               onClick={handleSubmitHomework}
               disabled={submitting}
             >
-              {submitting ? "Submitting..." : "Submit Homework"}
+              {submitting ? "Saving..." : "Submit"}
             </button>
             <button
               type="button"
@@ -296,7 +382,7 @@ export default function HomeworkManager({ onOpenTeacher }) {
         </div>
       )}
 
-      {/* Main Student Homework Modal */}
+      {/* Minimalist Student Homework Modal */}
       <div
         className={`overlay ${modalOpen ? "open" : ""}`}
         id="ov-homework"
@@ -305,188 +391,214 @@ export default function HomeworkManager({ onOpenTeacher }) {
         }}
       >
         <div className="modal hw-modal" onClick={(e) => e.stopPropagation()}>
-          <div className="hw-modal-head">
-            <h2 className="chall-title" style={{ margin: 0 }}>Homework</h2>
+          {/* Top Header */}
+          {selectedClass ? (
+            <div className="hw-drill-head">
+              <button
+                type="button"
+                className="hw-back-btn"
+                onClick={() => setSelectedClassId(null)}
+              >
+                ← Classes
+              </button>
+              <h2 className="hw-drill-title">{selectedClass.name}</h2>
+              <span style={{ width: "68px" }}></span>
+            </div>
+          ) : (
+            <>
+              <h2 className="chall-title">Homework</h2>
+              <div className="chall-rule"></div>
+            </>
+          )}
+
+          {/* Body Content */}
+          <div className="hw-body-wrap">
+            {!hasIdentity ? (
+              <div className="opp-empty" style={{ marginTop: "20px" }}>
+                Save your name in the bottom-left bar to view classes and homework.
+              </div>
+            ) : loading ? (
+              <div
+                className="skel"
+                style={{ height: "120px", borderRadius: "16px", marginTop: "20px" }}
+              ></div>
+            ) : selectedClass ? (
+              /* VIEW 2: HOMEWORKS INSIDE SELECTED CLASS (Unified List) */
+              <div className="hw-list" style={{ marginTop: "16px" }}>
+                {classHomeworks.length === 0 ? (
+                  <div className="opp-empty">No homework assigned in {selectedClass.name} yet.</div>
+                ) : (
+                  classHomeworks.map((a, idx) => {
+                    const st = getStatusInfo(a);
+                    return (
+                      <div
+                        key={a.id}
+                        className="hw-card"
+                        style={{ animationDelay: `${Math.min(idx * 35, 180)}ms` }}
+                      >
+                        <div className="hw-card-main">
+                          <div className="hw-card-top">
+                            <span className={`hw-status-pill ${st.type}`}>
+                              {st.badge}
+                            </span>
+                            {st.scoreText && (
+                              <span className="hw-score-highlight">{st.scoreText}</span>
+                            )}
+                          </div>
+                          <div className="hw-card-title">{a.title}</div>
+                          <div className="hw-card-meta">
+                            <span>{a.total} questions</span>
+                            {a.domainFilter && <span>· {a.domainFilter}</span>}
+                            {a.difficultyFilter && <span>· {a.difficultyFilter}</span>}
+                            {a.attemptsCount > 0 && (
+                              <span>
+                                · {a.attemptsCount} {a.attemptsCount === 1 ? "try" : "tries"}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className={`hw-action-btn ${a.completed ? "ghost" : "primary"}`}
+                          onClick={() => startHomeworkSession(a, true)}
+                        >
+                          {a.completed ? "Practice" : "Start"}
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            ) : (
+              /* VIEW 1: CLASSES LIST */
+              <div style={{ marginTop: "20px" }}>
+                {classes.length > 0 && (
+                  <div className="hw-list">
+                    {classes.map((c, idx) => {
+                      const cAssigns = assignments.filter((a) => a.classId === c.id);
+                      const doneCount = cAssigns.filter((a) => a.completed).length;
+                      const pendingCount = cAssigns.length - doneCount;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className="hw-class-card"
+                          style={{ animationDelay: `${Math.min(idx * 35, 180)}ms` }}
+                          onClick={() => setSelectedClassId(c.id)}
+                        >
+                          <div className="hw-class-card-left">
+                            <div className="hw-class-avatar">
+                              {c.name.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div className="hw-class-info">
+                              <div className="hw-class-title">{c.name}</div>
+                              <div className="hw-class-sub">
+                                {cAssigns.length === 0
+                                  ? "No assignments yet"
+                                  : pendingCount > 0
+                                  ? `${pendingCount} to do · ${doneCount} completed`
+                                  : `All ${doneCount} completed`}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="hw-class-card-right">
+                            {pendingCount > 0 && (
+                              <span className="hw-pending-dot">{pendingCount}</span>
+                            )}
+                            <span className="hw-chevron">›</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Join Class Form: shown automatically if 0 classes, or when toggled */}
+                {classes.length === 0 || showJoinForm ? (
+                  <form
+                    className="hw-join-bar"
+                    style={{ marginTop: classes.length > 0 ? "14px" : "0" }}
+                    onSubmit={handleJoinClass}
+                  >
+                    <input
+                      type="text"
+                      className="hw-join-input"
+                      placeholder="Enter class code..."
+                      maxLength={8}
+                      value={joinCode}
+                      onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                      autoFocus
+                    />
+                    <button type="submit" className="hw-join-btn">
+                      Join
+                    </button>
+                  </form>
+                ) : (
+                  <div className="hw-add-class-row">
+                    <button
+                      type="button"
+                      className="hw-join-toggle"
+                      onClick={() => {
+                        setJoinStatus(null);
+                        setShowJoinForm(true);
+                      }}
+                    >
+                      + Join another class
+                    </button>
+                  </div>
+                )}
+
+                {joinStatus && (
+                  <div className={`hw-status-msg ${joinStatus.ok ? "ok" : "err"}`}>
+                    {joinStatus.msg}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="hw-footer-row">
             <button
               type="button"
-              className="hw-close-icon"
+              className="hw-close-link"
               onClick={() => setModalOpen(false)}
             >
               Close
             </button>
           </div>
-          <div className="chall-rule"></div>
-
-          {!hasIdentity && (
-            <div className="hw-notice">
-              Enter your name and click Save in the bottom-left bar to sync classes and homework.
-            </div>
-          )}
-
-          {/* Join Class Bar */}
-          <form className="hw-join-bar" onSubmit={handleJoinClass}>
-            <input
-              type="text"
-              className="hw-join-input"
-              placeholder="Class code (e.g. SAT842)"
-              maxLength={8}
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-            />
-            <button type="submit" className="btn-blue hw-join-btn">
-              Join Class
-            </button>
-          </form>
-
-          {joinStatus && (
-            <div className={`hw-status-msg ${joinStatus.ok ? "ok" : "err"}`}>
-              {joinStatus.msg}
-            </div>
-          )}
-
-          {/* Enrolled Classes Pills */}
-          {classes.length > 0 && (
-            <div className="hw-classes-row">
-              {classes.map((c) => (
-                <span key={c.id} className="hw-class-pill">
-                  <span>{c.name}</span>
-                  <span className="hw-class-code">{c.join_code}</span>
-                  <button
-                    type="button"
-                    className="hw-class-leave"
-                    title="Leave class"
-                    onClick={() => handleLeaveClass(c.id)}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Active / Completed Tabs */}
-          <div className="chall-pick hw-tabs">
-            <button
-              type="button"
-              className={tab === "active" ? "sel" : ""}
-              onClick={() => setTab("active")}
-            >
-              Active ({activeList.length})
-            </button>
-            <button
-              type="button"
-              className={tab === "completed" ? "sel" : ""}
-              onClick={() => setTab("completed")}
-            >
-              Completed ({completedList.length})
-            </button>
-          </div>
-
-          {/* Assignment List */}
-          <div className="hw-list">
-            {loading ? (
-              <div className="skel" style={{ height: "110px" }}></div>
-            ) : tab === "active" ? (
-              activeList.length === 0 ? (
-                <div className="opp-empty">
-                  {classes.length === 0
-                    ? "No classes joined yet. Enter a class code above."
-                    : "No pending homework assignments."}
-                </div>
-              ) : (
-                activeList.map((a) => {
-                  const due = formatDue(a.dueAt);
-                  return (
-                    <div key={a.id} className="hw-card">
-                      <div className="hw-card-main">
-                        <div className="hw-card-top">
-                          <span className="hw-card-class">{a.className}</span>
-                          {due && (
-                            <span className={`hw-due-tag ${due.isPast ? "late" : ""}`}>
-                              Due {due.str}
-                            </span>
-                          )}
-                        </div>
-                        <div className="hw-card-title">{a.title}</div>
-                        <div className="hw-card-meta">
-                          <span>{a.total} Questions</span>
-                          {a.domainFilter && <span>· {a.domainFilter}</span>}
-                          {a.difficultyFilter && <span>· {a.difficultyFilter}</span>}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-blue hw-start-btn"
-                        onClick={() => startHomeworkSession(a, true)}
-                      >
-                        Start
-                      </button>
-                    </div>
-                  );
-                })
-              )
-            ) : completedList.length === 0 ? (
-              <div className="opp-empty">No completed assignments yet.</div>
-            ) : (
-              completedList.map((a) => {
-                const bestPct = a.total > 0 ? Math.round((a.bestScore / a.total) * 100) : 0;
-                return (
-                  <div key={a.id} className="hw-card completed">
-                    <div className="hw-card-main">
-                      <div className="hw-card-top">
-                        <span className="hw-card-class">{a.className}</span>
-                        {a.isLate && <span className="hw-due-tag late">Submitted Late</span>}
-                      </div>
-                      <div className="hw-card-title">{a.title}</div>
-                      <div className="hw-card-meta">
-                        <span className="hw-score-highlight">
-                          Best: {a.bestScore} / {a.total} ({bestPct}%)
-                        </span>
-                        <span>
-                          · {a.attemptsCount} {a.attemptsCount === 1 ? "attempt" : "attempts"}
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn-ghost hw-start-btn"
-                      onClick={() => startHomeworkSession(a, true)}
-                    >
-                      Practice Again
-                    </button>
-                  </div>
-                );
-              })
-            )}
-          </div>
         </div>
       </div>
 
-      {/* Homework Submission Results Modal */}
+      {/* Minimalist Homework Results Modal */}
       {summaryModal && (
         <div
           className="overlay open"
           id="ov-hw-summary"
           onClick={() => setSummaryModal(null)}
         >
-          <div className="modal hw-summary-modal" onClick={(e) => e.stopPropagation()}>
-            <h2 className="chall-title" style={{ marginBottom: "4px" }}>
-              Homework Submitted
+          <div className="modal hw-modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="chall-title">
+              {summaryModal.summary.score} / {summaryModal.summary.total}
             </h2>
             <div className="hw-sum-subtitle">{summaryModal.assignment.title}</div>
             <div className="chall-rule"></div>
 
             <div className="hw-sum-stats">
               <div className="hw-sum-box">
-                <div className="hw-sum-label">Score</div>
+                <div className="hw-sum-label">Accuracy</div>
                 <div className="hw-sum-val">
-                  {summaryModal.summary.score} / {summaryModal.summary.total}
+                  {summaryModal.summary.total > 0
+                    ? Math.round(
+                        (summaryModal.summary.score / summaryModal.summary.total) * 100
+                      )
+                    : 0}
+                  %
                 </div>
               </div>
               <div className="hw-sum-box">
-                <div className="hw-sum-label">Best Score</div>
+                <div className="hw-sum-label">Best</div>
                 <div className="hw-sum-val">
-                  {summaryModal.summary.bestScore} / {summaryModal.summary.total}
+                  {summaryModal.summary.bestScore}/{summaryModal.summary.total}
                 </div>
               </div>
               <div className="hw-sum-box">
@@ -495,7 +607,6 @@ export default function HomeworkManager({ onOpenTeacher }) {
               </div>
             </div>
 
-            <div className="fsec">Question Breakdown (Click to Review)</div>
             <div className="hw-sum-grid">
               {(summaryModal.assignment.questionIds || []).map((qid, i) => {
                 const r = summaryModal.results[qid] || {};
@@ -519,24 +630,24 @@ export default function HomeworkManager({ onOpenTeacher }) {
               })}
             </div>
 
-            <div className="mrow" style={{ marginTop: "20px" }}>
+            <div className="hw-sum-actions">
               <button
                 type="button"
-                className="btn-ghost"
+                className="hw-action-btn ghost"
                 onClick={() => setSummaryModal(null)}
               >
-                Review Explanations
+                Review
               </button>
               <button
                 type="button"
-                className="btn-ghost"
+                className="hw-action-btn ghost"
                 onClick={() => startHomeworkSession(summaryModal.assignment, true)}
               >
-                Retry Fresh
+                Retry
               </button>
               <button
                 type="button"
-                className="btn-blue"
+                className="hw-action-btn primary"
                 onClick={exitHomeworkSession}
               >
                 Done
@@ -548,4 +659,3 @@ export default function HomeworkManager({ onOpenTeacher }) {
     </>
   );
 }
-

@@ -33,20 +33,20 @@ function MainApp() {
     // 1. Boot the SAT exam engine
     initExamEngine();
 
-    // 2. Load backend.js for multiplayer duels and sync
-    const backendScript = document.createElement('script');
-    backendScript.type = 'module';
-    backendScript.src = '/backend.js';
-    document.body.appendChild(backendScript);
+    // 2. Load backend.js for multiplayer duels and sync (once)
+    if (!document.getElementById('satbank-backend-script')) {
+      const backendScript = document.createElement('script');
+      backendScript.id = 'satbank-backend-script';
+      backendScript.type = 'module';
+      backendScript.src = '/backend.js';
+      document.body.appendChild(backendScript);
+    }
 
     const onPopState = () => setShowTeacher(isTeacherRoute());
     window.addEventListener('popstate', onPopState);
 
     return () => {
       window.removeEventListener('popstate', onPopState);
-      if (document.body.contains(backendScript)) {
-        document.body.removeChild(backendScript);
-      }
     };
   }, []);
 
@@ -69,7 +69,7 @@ function MainApp() {
   return (
     <>
       <SATExamView />
-      <HomeworkManager onOpenTeacher={openTeacher} />
+      <HomeworkManager />
       {showTeacher && <TeacherPortal onExit={closeTeacher} />}
     </>
   );

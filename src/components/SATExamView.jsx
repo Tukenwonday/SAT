@@ -113,10 +113,9 @@ export default function SATExamView() {
     </div>
     <hr className="dash" />
     <footer id="footer">
-      <form id="namebox" title="Your display name — just a name, no login" onSubmit={(e) => e.preventDefault()}>
-        <input id="nameinput" type="text" maxLength="20" placeholder="Your name…" autoComplete="off" />
-        <button id="namesave" type="button">Save</button>
-        <span id="whoami" style={{ display: "none" }}></span>
+      <form id="namebox" title="Account" onSubmit={(e) => e.preventDefault()}>
+        <button id="authbtn" type="button" className="footer-auth-btn">Sign In</button>
+        <span id="whoami" className="footer-user-pill" style={{ display: "none" }}></span>
       </form>
       <span id="challpill" style={{ display: "none" }}></span>
       <button id="navpill">Question 1 <svg width="11" height="7" viewBox="0 0 11 7" style={{ verticalAlign: "1px" }}>
@@ -301,6 +300,100 @@ export default function SATExamView() {
         <div className="prof-solved-label">Questions Solved</div>
         <div className="prof-solved-num" id="prof-solved">0</div>
       </div>
+
+      <div id="prof-self-actions" style={{ display: "none", marginTop: "14px", textAlign: "center" }}>
+        <button id="prof-switch-btn" type="button" className="auth-link-btn">
+          Switch Account / Change PIN
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div className="overlay" id="ov-auth">
+    <div className="modal auth-modal" onClick={(e) => e.stopPropagation()}>
+      <h2 className="chall-title" id="auth-title">Sign In</h2>
+      <div className="chall-rule"></div>
+
+      <div id="auth-view-login">
+        <div className="auth-field">
+          <label className="auth-label" htmlFor="nameinput">Name</label>
+          <input
+            id="nameinput"
+            type="text"
+            maxLength="20"
+            placeholder="Enter your display name"
+            autoComplete="off"
+          />
+        </div>
+
+        <div className="auth-field">
+          <div className="auth-label-row">
+            <label className="auth-label" htmlFor="pininput">PIN</label>
+            <span className="auth-hint">4+ chars · new names set a PIN</span>
+          </div>
+          <input
+            id="pininput"
+            type="password"
+            maxLength="64"
+            placeholder="Enter your PIN"
+            autoComplete="current-password"
+          />
+        </div>
+
+        <div id="auth-msg" className="auth-msg" style={{ display: "none" }}></div>
+
+        <button id="namesave" type="button" className="auth-submit-btn">
+          Continue
+        </button>
+
+        <div className="auth-footer-row">
+          <button id="auth-to-pin" type="button" className="auth-link-btn" style={{ display: "none" }}>
+            Change PIN
+          </button>
+          <button id="authclose" type="button" className="auth-cancel-btn">
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      <div id="auth-view-pin" style={{ display: "none" }}>
+        <div className="auth-field">
+          <label className="auth-label" htmlFor="auth-old-pin">Current PIN</label>
+          <input
+            id="auth-old-pin"
+            type="password"
+            maxLength="64"
+            placeholder="Enter current PIN"
+            autoComplete="current-password"
+          />
+        </div>
+
+        <div className="auth-field">
+          <label className="auth-label" htmlFor="auth-new-pin">New PIN</label>
+          <input
+            id="auth-new-pin"
+            type="password"
+            maxLength="64"
+            placeholder="At least 4 characters"
+            autoComplete="new-password"
+          />
+        </div>
+
+        <div id="auth-pin-msg" className="auth-msg" style={{ display: "none" }}></div>
+
+        <button id="auth-pin-save" type="button" className="auth-submit-btn">
+          Update PIN
+        </button>
+
+        <div className="auth-footer-row">
+          <button id="auth-back-login" type="button" className="auth-link-btn">
+            Back
+          </button>
+          <button id="auth-pin-close" type="button" className="auth-cancel-btn">
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -344,7 +437,6 @@ export default function SATExamView() {
     <button id="mm-first">Go to first question</button>
     <button id="mm-clear">Clear answer for this question</button>
     <button id="mm-reset">Reset all progress</button>
-    <button id="mm-teacher">Teacher Portal</button>
   </div>
 
   <div id="hlpop" role="toolbar" aria-label="Highlight">

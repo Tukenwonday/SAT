@@ -47,3 +47,17 @@ export async function hwFetch(path, opts = {}) {
   }
 }
 
+let clientDbPromise = null;
+export async function loadClientSatDb() {
+  if (window.App && Array.isArray(window.App.DB) && window.App.DB.length > 0) {
+    return window.App.DB;
+  }
+  if (!clientDbPromise) {
+    clientDbPromise = fetch("/sat_db.json")
+      .then((r) => (r.ok ? r.json() : []))
+      .catch(() => []);
+  }
+  const db = await clientDbPromise;
+  return Array.isArray(db) ? db : [];
+}
+

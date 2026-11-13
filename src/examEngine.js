@@ -1,5 +1,8 @@
 export function initExamEngine() {
     const $ = id => document.getElementById(id);
+    const examRoot = $('exam');
+    if (examRoot && examRoot.dataset.engineWired === '1') return;
+    if (examRoot) examRoot.dataset.engineWired = '1';
     const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const LS_NAME = 'satbank:name';   // the ONLY identity store: a typed name, no login
     const LS_UI = 'satbank:ui';       // optional UI state: theme/sound/motion + filters/highlight prefs
@@ -461,8 +464,8 @@ export function initExamEngine() {
     let cdHidden = false; // session-only: refresh always brings the countdown back
     function cdTarget() {
       const n = new Date();
-      let t = new Date(n.getFullYear(), 10, 7);
-      if (t <= n) t = new Date(n.getFullYear() + 1, 10, 7);
+      let t = new Date(n.getFullYear(), 11, 5); // Month 11 is December (0-indexed)
+      if (t <= n) t = new Date(n.getFullYear() + 1, 11, 5);
       return t;
     }
     function cdTick() {
@@ -470,7 +473,7 @@ export function initExamEngine() {
       if (ms <= 0) { $('cdtime').textContent = 'Today!'; return; }
       const d = Math.floor(ms / 864e5);
       $('cdtime').textContent = d + 'd';
-      $('cdtime').title = 'November 7';
+      $('cdtime').title = 'December 5';
     }
     function cdApply() {
       $('cdtime').style.display = '';
@@ -484,48 +487,154 @@ export function initExamEngine() {
       $('zoomval').textContent = Math.round(ZOOMS[zi] * 100) + '%';
     });
 
-    /* ── Name box (bottom-left): input + Save. Identity = typed name only. ── */
+    /* ── Auth / Name trigger (bottom-left) + Login Modal (#ov-auth) ── */
+    function showAuthMsg(id, text, isErr) {
+      const el = $(id);
+      if (!el) return;
+      if (!text) {
+        el.style.display = 'none';
+        el.textContent = '';
+        return;
+      }
+      el.style.display = 'block';
+      el.textContent = text;
+      el.className = 'auth-msg' + (isErr ? ' is-err' : '');
+    }
+    window.showAuthMsg = showAuthMsg;
+
     function syncName() {
       const n = (S.name || '').trim();
-      const inp = $('nameinput'), who = $('whoami');
+      const btn = $('authbtn'), who = $('whoami');
       if (n) {
-        inp.style.display = 'none'; $('namesave').style.display = 'none';
-        who.style.display = ''; who.textContent = n;
+        if (btn) btn.style.display = 'none';
+        if (who) {
+          who.style.display = '';
+          who.textContent = n;
+        }
       } else {
-        inp.style.display = ''; $('namesave').style.display = '';
-        who.style.display = 'none'; inp.value = '';
+        if (btn) btn.style.display = '';
+        if (who) { who.style.display = 'none'; }
       }
     }
+
+    function openAuthModal(prefillName, errMsg) {
+      const ov = $('ov-auth');
+      if (!ov) return;
+      if ($('auth-title')) $('auth-title').textContent = 'Sign In';
+      if ($('auth-view-login')) $('auth-view-login').style.display = '';
+      if ($('auth-view-pin')) $('auth-view-pin').style.display = 'none';
+      showAuthMsg('auth-msg', errMsg || '', !!errMsg);
+      showAuthMsg('auth-pin-msg', '', false);
+
+      const currentName = typeof prefillName === 'string' ? prefillName : (S.name || '');
+      const ni = $('nameinput'), pi = $('pininput');
+      if (ni) ni.value = currentName;
+      if (pi) {
+        let savedPin = '';
+        try {
+          if (currentName) savedPin = localStorage.getItem('satbank:pin:' + currentName) || '';
+        } catch (e) {}
+        pi.value = savedPin;
+      }
+      const toPinBtn = $('auth-to-pin');
+      if (toPinBtn) toPinBtn.style.display = (S.name || '').trim() ? '' : 'none';
+
+      ov.classList.add('open');
+      setTimeout(() => {
+        if (ni && !ni.value) ni.focus();
+        else if (pi && (!pi.value || errMsg)) { pi.focus(); pi.select(); }
+        else if (ni) { ni.focus(); ni.select(); }
+      }, 60);
+    }
+    window.openAuthModal = openAuthModal;
+
     function commitName() {
       const v = ($('nameinput').value || '').trim().slice(0, 20);
-      if (!v) { $('nameinput').focus(); return; }
+      if (!v) {
+        showAuthMsg('auth-msg', 'Please enter your name.', true);
+        $('nameinput').focus();
+        return;
+      }
+      const pi = $('pininput');
+      let pin = (pi && pi.value || '').trim();
+      if (!pin) {
+        try { pin = (localStorage.getItem('satbank:pin:' + v) || '').trim(); } catch (e) {}
+      }
+      if (!pin || pin.length < 4) {
+        showAuthMsg('auth-msg', 'Please enter a PIN (at least 4 characters).', true);
+        if (pi) pi.focus();
+        return;
+      }
+      showAuthMsg('auth-msg', '', false);
       if (S.name && S.name !== v) {
         S.answers = {};
       }
       S.name = v; save(); syncName();
-      const btn = $('namesave');
-      btn.classList.remove('pop'); void btn.offsetWidth; btn.classList.add('pop');
       if (window.FX) FX.sound('pop');
-      if (window.Net && Net.identify) Net.identify(v); // status/{name} + restore progress
-      toast('Signed in as ' + v + ' 👋');
+      if (window.Net && Net.identify) {
+        Net.identify(v, pin);
+      } else {
+        if ($('ov-auth')) $('ov-auth').classList.remove('open');
+        toast('Signed in as ' + v);
+      }
+    }
+
+    if ($('authbtn')) $('authbtn').addEventListener('click', () => openAuthModal());
+    if ($('authclose')) $('authclose').addEventListener('click', () => $('ov-auth').classList.remove('open'));
+    if ($('auth-pin-close')) $('auth-pin-close').addEventListener('click', () => $('ov-auth').classList.remove('open'));
+    if ($('auth-to-pin')) {
+      $('auth-to-pin').addEventListener('click', () => {
+        if ($('auth-title')) $('auth-title').textContent = 'Change PIN';
+        if ($('auth-view-login')) $('auth-view-login').style.display = 'none';
+        if ($('auth-view-pin')) $('auth-view-pin').style.display = '';
+        showAuthMsg('auth-pin-msg', '', false);
+        if ($('auth-old-pin')) {
+          let curPin = '';
+          try { if (S.name) curPin = localStorage.getItem('satbank:pin:' + S.name) || ''; } catch (e) {}
+          $('auth-old-pin').value = curPin;
+        }
+        if ($('auth-new-pin')) {
+          $('auth-new-pin').value = '';
+          setTimeout(() => $('auth-new-pin').focus(), 40);
+        }
+      });
+    }
+    if ($('auth-back-login')) {
+      $('auth-back-login').addEventListener('click', () => {
+        if ($('auth-title')) $('auth-title').textContent = 'Sign In';
+        if ($('auth-view-pin')) $('auth-view-pin').style.display = 'none';
+        if ($('auth-view-login')) $('auth-view-login').style.display = '';
+        showAuthMsg('auth-msg', '', false);
+      });
     }
     $('namesave').addEventListener('click', commitName);
+    $('nameinput').addEventListener('input', () => {
+      const typed = ($('nameinput').value || '').trim();
+      const pi = $('pininput');
+      if (pi && typed) {
+        try {
+          const savedPin = localStorage.getItem('satbank:pin:' + typed) || '';
+          if (savedPin) pi.value = savedPin;
+        } catch (e) {}
+      }
+    });
     $('nameinput').addEventListener('keydown', ev => {
       if (ev.key === 'Enter') { ev.preventDefault(); commitName(); }
       ev.stopPropagation();
     });
-    // Double-click the saved name to change it.
-    function editName() {
-      $('nameinput').style.display = '';
-      $('namesave').style.display = '';
-      $('whoami').style.display = 'none';
-      $('nameinput').value = S.name || '';
-      $('nameinput').focus();
-      $('nameinput').select();
+    if ($('pininput')) {
+      $('pininput').addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') { ev.preventDefault(); commitName(); }
+        ev.stopPropagation();
+      });
     }
+    function editName() {
+      openAuthModal();
+    }
+    window.editName = editName;
     $('whoami').addEventListener('dblclick', editName);
     $('whoami').style.cursor = 'pointer';
-    $('whoami').title = 'Click to view profile · Double-click to change name';
+    $('whoami').title = 'Click to view profile · Double-click to switch account or PIN';
     /* Tiny toast helper (used before backend.js loads too). */
     function toast(msg, ms) {
       const box = $('toasts'); if (!box) return;
@@ -644,9 +753,14 @@ export function initExamEngine() {
     document.addEventListener('scroll', () => hlHidePop(), true);
     $('left').addEventListener('scroll', () => { if ($('hlpop').classList.contains('open')) hlHidePop(); });
     $('right').addEventListener('scroll', () => { if ($('hlpop').classList.contains('open')) hlHidePop(); });
-    $('morebtn').addEventListener('click', ev => { ev.stopPropagation(); $('moreMenu').classList.toggle('open'); });
+    $('morebtn').addEventListener('click', ev => {
+      ev.stopPropagation();
+      $('moreMenu').classList.toggle('open');
+    });
     document.addEventListener('click', ev => {
-      if (!ev.target.closest('#moreMenu')) $('moreMenu').classList.remove('open');
+      if (!ev.target.closest || (!ev.target.closest('#moreMenu') && !ev.target.closest('#morebtn'))) {
+        if ($('moreMenu')) $('moreMenu').classList.remove('open');
+      }
       if (ev.target.classList && ev.target.classList.contains('overlay')) ev.target.classList.remove('open');
     });
     $('mm-first').addEventListener('click', () => { $('moreMenu').classList.remove('open'); if (F.length) { idx = F[0]; renderQ(); } });

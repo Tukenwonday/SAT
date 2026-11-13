@@ -86,8 +86,10 @@ function setPin(name, pin) {
 function ensurePin(name) {
   let pin = getPin(name);
   if (pin) return pin;
-  pin = (window.prompt("PIN for \"" + name + "\" (first use: invent one, min 4 chars):") || "").trim();
-  return pin;
+  if (window.openAuthModal) {
+    window.openAuthModal(name, "Please enter your PIN to sign in.");
+  }
+  return "";
 }
 
 // Sessions I forfeited (survives reload): the boot rejoin must
@@ -278,9 +280,13 @@ function connectSocket() {
   });
   so.on("disconnect", () => { Net.sockOk = false; startPollFallback(); });
   so.on("identify:reject", () => {
-    toast("Wrong PIN for " + Net.name + " — re-enter your name + PIN.");
     try { localStorage.removeItem(LS_PIN(Net.name)); } catch (e) {}
     Net.sockOk = false;
+    if (window.openAuthModal) {
+      window.openAuthModal(Net.name, "Incorrect PIN for " + Net.name + " — please re-enter your PIN.");
+    } else {
+      toast("Wrong PIN for " + Net.name + " — re-enter your name + PIN.");
+    }
   });
   so.on("presence:list", people => onPresence(people || []));
   so.on("invite:new", s => showInvite(s.id, s));
@@ -309,10 +315,11 @@ function startPollFallback() {
 }
 
 // ── identify + presence ────────────────────────────────────────────────────
-Net.identify = function (name) { // index.html calls identify(name); PIN resolved here
-  const pin = ensurePin(String(name || "").trim().slice(0, 20));
-  if (!pin) { toast("PIN needed — try saving your name again."); return; }
-  identify(name, pin, false);
+Net.identify = function (name, explicitPin) {
+  const clean = String(name || "").trim().slice(0, 20);
+  const pin = (explicitPin && String(explicitPin).trim()) || ensurePin(clean);
+  if (!pin) return;
+  identify(clean, pin, false);
 };
 async function identify(name, pin, quiet) {
   name = String(name || "").trim().slice(0, 20);
@@ -334,11 +341,19 @@ async function identify(name, pin, quiet) {
   if (!r || !r.ok) {
     if (r && r.error === "bad-pin") {
       try { localStorage.removeItem(LS_PIN(name)); } catch (e) {}
-      toast("Wrong PIN for " + name + " — that name is taken. Pick another or retry.");
-    } else toast("Backend unreachable — playing solo (offline).");
+      if (window.openAuthModal) {
+        window.openAuthModal(name, "Incorrect PIN for " + name + ". Try again or choose another name.");
+      } else {
+        toast("Wrong PIN for " + name + " — that name is taken. Pick another or retry.");
+      }
+    } else {
+      if ($("ov-auth")) $("ov-auth").classList.remove("open");
+      toast("Backend unreachable — playing solo (offline).");
+    }
     paintPresenceOffline();
     return;
   }
+  if ($("ov-auth")) $("ov-auth").classList.remove("open");
   if (r.generatedPin) {
     setPin(name, r.generatedPin);
     toast("Your PIN is " + r.generatedPin + " — save it! Needed on other devices.", 8000);
@@ -386,7 +401,7 @@ async function identify(name, pin, quiet) {
   startInvitePoll();
   startPresenceWatchdog();
   startHeartbeat();
-  if (!quiet) toast("Online as " + name + " ✅");
+  if (!quiet) toast("Signed in as " + name);
 }
 
 function currentIdx() { try { return App().idx || 0; } catch (err) { return 0; } }
@@ -658,46 +673,18 @@ function paintPresenceOffline() {
   box.appendChild(btn);
 }
 
-// ── PIN box (injected next to the name box; hidden once signed in) ─────────
+// ── Auth modal + profile wiring (no inline inputs or emoji buttons) ────────
 function injectPinBox() {
-  if ($("pininput") || !$("namebox")) return;
-  const inp = document.createElement("input");
-  inp.id = "pininput";
-  inp.type = "password";
-  inp.maxLength = 64;
-  inp.placeholder = "PIN";
-  inp.autocomplete = "current-password";
-  inp.title = "Your name PIN — prevents impersonation";
-  inp.style.cssText = "padding:5px 8px;font-size:13px;border:1.5px solid #333;border-radius:10px;" +
-    "font-family:var(--sans);max-width:70px;";
-  inp.addEventListener("keydown", ev => ev.stopPropagation());
-  const save = $("namesave");
-  save.parentNode.insertBefore(inp, save);
-  // Change-PIN button: double-clicking the name reveals it next to Save.
-  const key = document.createElement("button");
-  key.id = "pinchange";
-  key.type = "button";
-  key.textContent = "🔑";
-  key.title = "Change PIN";
-  key.style.cssText = "border:1.5px solid #333;background:#fff;border-radius:10px;" +
-    "padding:5px 8px;font-size:13px;cursor:pointer;display:none;";
-  save.parentNode.insertBefore(key, save.nextSibling);
-  key.addEventListener("click", changePinFlow);
-  // Mirror the name box visibility (index.html hides nameinput/namesave when signed in).
-  const ni = $("nameinput");
-  const sync = () => { inp.style.display = ni.style.display; key.style.display = ni.style.display; };
-  new MutationObserver(sync).observe(ni, { attributes: true, attributeFilter: ["style"] });
-  sync();
-  // Single-click name: open profile. Double-click: edit name + reveal PIN changer.
   const who = $("whoami");
   if (who && !who._wiredProfile) {
     who._wiredProfile = true;
     let whoClickTimer = null;
-    who.addEventListener("click", ev => {
+    who.addEventListener("click", () => {
       if (whoClickTimer) return;
       whoClickTimer = setTimeout(() => {
         whoClickTimer = null;
         if (Net.name) Net.openProfile(Net.name);
+        else if (window.openAuthModal) window.openAuthModal();
       }, 250);
     });
     if (window.editName) {
@@ -705,28 +692,72 @@ function injectPinBox() {
       who.addEventListener("dblclick", () => {
         if (whoClickTimer) { clearTimeout(whoClickTimer); whoClickTimer = null; }
         window.editName();
-        sync();
       });
     }
   }
+  const pinSaveBtn = $("auth-pin-save");
+  if (pinSaveBtn && !pinSaveBtn._wiredPin) {
+    pinSaveBtn._wiredPin = true;
+    pinSaveBtn.addEventListener("click", changePinFlow);
+  }
+  const newPinInp = $("auth-new-pin");
+  if (newPinInp && !newPinInp._wiredKey) {
+    newPinInp._wiredKey = true;
+    newPinInp.addEventListener("keydown", ev => {
+      if (ev.key === "Enter") { ev.preventDefault(); changePinFlow(); }
+      ev.stopPropagation();
+    });
+  }
+  const oldPinInp = $("auth-old-pin");
+  if (oldPinInp && !oldPinInp._wiredKey) {
+    oldPinInp._wiredKey = true;
+    oldPinInp.addEventListener("keydown", ev => {
+      if (ev.key === "Enter") { ev.preventDefault(); changePinFlow(); }
+      ev.stopPropagation();
+    });
+  }
+  const profSwitchBtn = $("prof-switch-btn");
+  if (profSwitchBtn && !profSwitchBtn._wired) {
+    profSwitchBtn._wired = true;
+    profSwitchBtn.addEventListener("click", () => {
+      if ($("ov-profile")) $("ov-profile").classList.remove("open");
+      if (window.openAuthModal) window.openAuthModal();
+    });
+  }
 }
-function syncPinBox() {
-  const ni = $("nameinput"), inp = $("pininput"), key = $("pinchange");
-  if (ni && inp) inp.style.display = ni.style.display;
-  if (ni && key) key.style.display = ni.style.display;
-}
+function syncPinBox() {}
 async function changePinFlow() {
-  if (!Net.name) { toast("Save your name first."); return; }
-  const cur = window.prompt(`Current PIN for "${Net.name}":`, getPin(Net.name) || "");
-  if (cur === null) return;
-  const np = window.prompt("New PIN (min 4 characters):", "");
-  if (np === null) return;
-  const npin = (np || "").trim();
-  if (npin.length < 4) { toast("PIN must be at least 4 characters."); return; }
+  const showMsg = window.showAuthMsg || (() => {});
+  if (!Net.name) {
+    showMsg("auth-pin-msg", "Sign in with your name first.", true);
+    return;
+  }
+  const cur = (($("auth-old-pin") && $("auth-old-pin").value) || getPin(Net.name) || "").trim();
+  const npin = (($("auth-new-pin") && $("auth-new-pin").value) || "").trim();
+  if (!cur) {
+    showMsg("auth-pin-msg", "Please enter your current PIN.", true);
+    if ($("auth-old-pin")) $("auth-old-pin").focus();
+    return;
+  }
+  if (npin.length < 4) {
+    showMsg("auth-pin-msg", "New PIN must be at least 4 characters.", true);
+    if ($("auth-new-pin")) $("auth-new-pin").focus();
+    return;
+  }
+  showMsg("auth-pin-msg", "", false);
   const r = await api("/api/users/" + encodeURIComponent(Net.name) + "/pin",
-    { method: "POST", body: { oldPin: (cur || "").trim(), newPin: npin } });
-  if (r && r.ok) { setPin(Net.name, npin); toast("PIN changed ✅"); }
-  else toast(r && r.error === "bad-pin" ? "Wrong current PIN." : "Couldn't change PIN (offline?).");
+    { method: "POST", body: { oldPin: cur, newPin: npin } });
+  if (r && r.ok) {
+    setPin(Net.name, npin);
+    if ($("ov-auth")) $("ov-auth").classList.remove("open");
+    toast("PIN updated");
+  } else {
+    showMsg(
+      "auth-pin-msg",
+      r && r.error === "bad-pin" ? "Incorrect current PIN." : "Couldn't update PIN (offline?).",
+      true
+    );
+  }
 }
 
 // ── answers / progress / history ───────────────────────────────────────────
@@ -1492,6 +1523,9 @@ Net.openProfile = async function (name) {
   if ($("prof-acc")) $("prof-acc").textContent = "…";
   if ($("prof-bar-acc")) $("prof-bar-acc").style.width = "0%";
   if ($("prof-solved")) $("prof-solved").textContent = "…";
+  if ($("prof-self-actions")) {
+    $("prof-self-actions").style.display = (Net.name && name === Net.name) ? "" : "none";
+  }
 
   ov.classList.add("open");
 
